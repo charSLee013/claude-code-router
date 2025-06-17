@@ -1,0 +1,32 @@
+{
+  "usePlugin": "",
+  "LOG": true,
+  "OPENAI_API_KEY": "sk-5f018f0e3f4841efbd01a2d8f9771b63",
+  "OPENAI_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "OPENAI_MODEL": "qwen3-8b",
+  "providers": [
+    {
+      "id": "qwen3-8b",
+      "api_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "api_key": "sk-5f018f0e3f4841efbd01a2d8f9771b63",
+      "model": "qwen3-8b"
+    },
+    {
+      "id": "gpt-4o-mini",
+      "api_base_url": "https://api.openai.com/v1",
+      "api_key": "your-openai-api-key",
+      "model": "gpt-4o-mini"
+    },
+    {
+      "id": "claude-3-sonnet",
+      "api_base_url": "https://api.anthropic.com/v1",
+      "api_key": "your-anthropic-api-key",
+      "model": "claude-3-sonnet-20240229"
+    }
+  ],
+  "Router": {
+    "background": "qwen3-8b",
+    "think": "qwen3-8b",
+    "longContext": "qwen3-8b"
+  }
+} 

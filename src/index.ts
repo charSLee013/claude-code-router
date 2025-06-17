@@ -15,6 +15,16 @@ import {
 import { LRUCache } from "lru-cache";
 import { log } from "./utils/log";
 
+// TypeScript interface extensions for custom Request properties
+declare global {
+  namespace Express {
+    interface Request {
+      config?: any;
+      provider?: string;
+    }
+  }
+}
+
 async function initializeClaudeConfig() {
   const homeDir = process.env.HOME;
   const configPath = `${homeDir}/.claude.json`;
@@ -40,10 +50,10 @@ interface RunOptions {
 }
 
 interface ModelProvider {
-  name: string;
+  id: string;
   api_base_url: string;
   api_key: string;
-  models: string[];
+  model: string;
 }
 
 async function run(options: RunOptions = {}) {
@@ -68,22 +78,22 @@ async function run(options: RunOptions = {}) {
     if (provider === undefined) {
       throw new Error(`Provider ${providerName} not found`);
     }
-    let openai = providerCache.get(provider.name);
+    let openai = providerCache.get(provider.id);
     if (!openai) {
       openai = new OpenAI({
         baseURL: provider.api_base_url,
         apiKey: provider.api_key,
         ...getOpenAICommonOptions(),
       });
-      providerCache.set(provider.name, openai);
+      providerCache.set(provider.id, openai);
     }
     return openai;
   }
 
-  if (Array.isArray(config.Providers)) {
-    config.Providers.forEach((provider) => {
+  if (Array.isArray(config.providers)) {
+    config.providers.forEach((provider: ModelProvider) => {
       try {
-        Providers.set(provider.name, provider);
+        Providers.set(provider.id, provider);
       } catch (error) {
         console.error("Failed to parse model provider:", error);
       }
@@ -92,10 +102,10 @@ async function run(options: RunOptions = {}) {
 
   if (config.OPENAI_API_KEY && config.OPENAI_BASE_URL && config.OPENAI_MODEL) {
     const defaultProvider = {
-      name: "default",
+      id: "default",
       api_base_url: config.OPENAI_BASE_URL,
       api_key: config.OPENAI_API_KEY,
-      models: [config.OPENAI_MODEL],
+      model: config.OPENAI_MODEL,
     };
     Providers.set("default", defaultProvider);
   } else if (Providers.size > 0) {

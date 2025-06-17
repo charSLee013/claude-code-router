@@ -9,28 +9,28 @@ const getUseModel = (req: Request, tokenCount: number) => {
   // if tokenCount is greater than 32K, use the long context model
   if (tokenCount > 1000 * 32) {
     log("Using long context model due to token count:", tokenCount);
-    const [provider, model] = req.config.Router!.longContext.split(",");
+    const modelId = req.config.Router!.longContext;
     return {
-      provider,
-      model,
+      provider: modelId,
+      model: modelId,
     };
   }
   // If the model is claude-3-5-haiku, use the background model
   if (req.body.model?.startsWith("claude-3-5-haiku")) {
     log("Using background model for ", req.body.model);
-    const [provider, model] = req.config.Router!.background.split(",");
+    const modelId = req.config.Router!.background;
     return {
-      provider,
-      model,
+      provider: modelId,
+      model: modelId,
     };
   }
   // if exits thinking, use the think model
   if (req.body.thinking) {
     log("Using think model for ", req.body.thinking);
-    const [provider, model] = req.config.Router!.think.split(",");
+    const modelId = req.config.Router!.think;
     return {
-      provider,
-      model,
+      provider: modelId,
+      model: modelId,
     };
   }
   const [provider, model] = req.body.model.split(",");
@@ -67,7 +67,10 @@ export const router = async (
                 JSON.stringify(contentPart.input)
               ).length;
             } else if (contentPart.type === "tool_result") {
-              tokenCount += enc.encode(contentPart.content || "").length;
+              const content = contentPart.content;
+              if (typeof content === "string") {
+                tokenCount += enc.encode(content).length;
+              }
             }
           });
         }
@@ -81,14 +84,14 @@ export const router = async (
         if (typeof item.text === "string") {
           tokenCount += enc.encode(item.text).length;
         } else if (Array.isArray(item.text)) {
-          item.text.forEach((textPart) => {
+          (item.text as any[]).forEach((textPart: any) => {
             tokenCount += enc.encode(textPart || "").length;
           });
         }
       });
     }
     if (tools) {
-      tools.forEach((tool) => {
+      tools.forEach((tool: any) => {
         if (tool.description) {
           tokenCount += enc.encode(tool.name + tool.description).length;
         }
@@ -100,7 +103,7 @@ export const router = async (
     const { provider, model } = getUseModel(req, tokenCount);
     req.provider = provider;
     req.body.model = model;
-  } catch (error) {
+  } catch (error: any) {
     log("Error in router middleware:", error.message);
     req.provider = "default";
     req.body.model = req.config.OPENAI_MODEL;

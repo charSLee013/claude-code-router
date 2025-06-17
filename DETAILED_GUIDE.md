@@ -19,30 +19,30 @@
 
 配置文件是路由器的"大脑"，所有行为都由此文件定义。下面我们对其进行详细解析。
 
-### `Providers`: 定义您的模型库
+### `providers`: 定义您的模型库
 
-`Providers` 是一个数组，用于定义您可以使用的所有模型提供商。
+`providers` 是一个数组，用于定义您可以使用的所有模型。
 
 ```json
-"Providers": [
+"providers": [
   {
-    "name": "openrouter",
+    "id": "gemini-2.5-pro",
     "api_base_url": "https://openrouter.ai/api/v1",
     "api_key": "sk-xxx",
-    "models": ["google/gemini-2.5-pro-preview"]
+    "model": "google/gemini-2.5-pro-preview"
   },
   {
-    "name": "ollama",
+    "id": "qwen-coder",
     "api_base_url": "http://localhost:11434/v1",
     "api_key": "ollama",
-    "models": ["qwen2.5-coder:latest"]
+    "model": "qwen2.5-coder:latest"
   }
 ]
 ```
-- `name`: 提供商的唯一标识符，在 `Router` 规则中会用到。
+- `id`: 模型的唯一标识符，在 `Router` 规则中会用到。
 - `api_base_url`: 该提供商的 API 端点地址。
 - `api_key`: 对应的 API 密钥。
-- `models`: 一个字符串数组，列出您计划通过此提供商使用的模型。
+- `model`: 实际使用的模型名称。
 
 ### `Router`: 设置智能路由规则
 
@@ -50,9 +50,9 @@
 
 ```json
 "Router": {
-  "background": "ollama,qwen2.5-coder:latest",
-  "think": "deepseek,deepseek-reasoner",
-  "longContext": "openrouter,google/gemini-2.5-pro-preview"
+  "background": "qwen-coder",
+  "think": "deepseek-reasoner",
+  "longContext": "gemini-2.5-pro"
 }
 ```
 
@@ -62,8 +62,11 @@
       ```typescript
       if (req.body.model?.startsWith("claude-3-5-haiku")) {
         log("Using background model for ", req.body.model);
-        const [provider, model] = req.config.Router!.background.split(",");
-        // ...
+        const modelId = req.config.Router!.background;
+        return {
+          provider: modelId,
+          model: modelId,
+        };
       }
       ```
 
@@ -73,8 +76,11 @@
       ```typescript
       if (req.body.thinking) {
         log("Using think model for ", req.body.thinking);
-        const [provider, model] = req.config.Router!.think.split(",");
-        // ...
+        const modelId = req.config.Router!.think;
+        return {
+          provider: modelId,
+          model: modelId,
+        };
       }
       ```
 
@@ -85,8 +91,11 @@
       // 首先计算 tokenCount
       if (tokenCount > 1000 * 32) {
         log("Using long context model due to token count:", tokenCount);
-        const [provider, model] = req.config.Router!.longContext.split(",");
-        // ...
+        const modelId = req.config.Router!.longContext;
+        return {
+          provider: modelId,
+          model: modelId,
+        };
       }
       ```
 
@@ -164,7 +173,7 @@ export const formatRequest = async (req, res, next) => {
   // ... 其他代码 ...
 
   // 在函数末尾, next() 之前, 添加您的定制逻辑
-  if (req.provider === 'my-provider' && req.body.model === 'my-special-model') {
+  if (req.provider === 'my-model-id' && req.body.model === 'my-special-model') {
     // 检查是否存在 system prompt
     if (req.body.system) {
         const systemPrompt = Array.isArray(req.body.system) ? req.body.system.join(' ') : req.body.system;
