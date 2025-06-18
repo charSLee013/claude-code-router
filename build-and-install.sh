@@ -116,15 +116,20 @@ if [ $? -ne 0 ]; then
 fi
 log_success "项目构建完成"
 
+# 确保 CLI 文件具有执行权限
+CLI_FILE="$SCRIPT_DIR/dist/cli.js"
+if [ ! -f "$CLI_FILE" ]; then
+    log_error "CLI 文件不存在: $CLI_FILE"
+    exit 1
+fi
+
+chmod +x "$CLI_FILE"
+log_success "已设置 CLI 文件执行权限"
+
 # 全局安装
 log_info "全局安装 Claude Code Router..."
-if [ "$PACKAGE_MANAGER" = "pnpm" ]; then
-    pnpm link --global
-elif [ "$PACKAGE_MANAGER" = "yarn" ]; then
-    yarn global add file:$SCRIPT_DIR
-else
-    npm link
-fi
+# 优先使用 npm link，因为它对于 bin 文件链接更可靠
+npm link
 
 if [ $? -ne 0 ]; then
     log_error "全局安装失败"
