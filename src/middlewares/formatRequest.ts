@@ -4,6 +4,15 @@ import OpenAI from "openai";
 import { streamOpenAIResponse } from "../utils/stream";
 import { log } from "../utils/log";
 
+// 扩展 Express 的 Request 类型，添加 _simulate_non_stream 属性
+declare global {
+  namespace Express {
+    interface Request {
+      _simulate_non_stream?: boolean;
+    }
+  }
+}
+
 export const formatRequest = async (
   req: Request,
   res: Response,
@@ -179,6 +188,30 @@ export const formatRequest = async (
     }
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
+    
+    // 获取当前 provider 的配置
+    const currentProvider = req.config.providers.find((p: { id: string }) => p.id === req.provider);
+
+    // 合并请求中的 extra_body 和 provider 配置中的 extra_body
+    const initialExtraBody = req.body.extra_body || {};
+    const providerExtraBody = currentProvider?.extra_body || {};
+    const mergedExtraBody = { ...initialExtraBody, ...providerExtraBody };
+
+    if (Object.keys(mergedExtraBody).length > 0) {
+      data.extra_body = mergedExtraBody;
+      log(`添加 extra_body 参数: ${JSON.stringify(data.extra_body)}`);
+    }
+
+    // 如果是思考请求且需要强制流式传输
+    const isThinkRequest = req.provider === req.config.Router?.think;
+    if (isThinkRequest && currentProvider?.force_stream_for_thinking && !data.stream) {
+      // 记录原始的非流式请求状态
+      req._simulate_non_stream = true;
+      // 强制开启流式
+      data.stream = true;
+      log(`强制开启流式传输用于思考请求: ${req.provider}`);
+    }
+    
     req.body = data;
     console.log(JSON.stringify(data.messages, null, 2));
   } catch (error) {
@@ -203,7 +236,7 @@ export const formatRequest = async (
           };
         },
       };
-    await streamOpenAIResponse(res, errorCompletion, model, req.body);
+    await streamOpenAIResponse(res, errorCompletion, model, req.body, req);
   }
   next();
 };

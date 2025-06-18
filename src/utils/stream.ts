@@ -1,4 +1,4 @@
-import { Response } from "express";
+import { Response, Request } from "express";
 import { OpenAI } from "openai";
 import { log } from "./log";
 
@@ -45,13 +45,18 @@ export async function streamOpenAIResponse(
   res: Response,
   completion: any,
   model: string,
-  body: any
+  body: any,
+  req?: Request
 ) {
   const write = (data: string) => {
     log("response: ", data);
     res.write(data);
   };
   const messageId = "msg_" + Date.now();
+  
+  // 检查是否需要模拟非流式请求
+  const simulateNonStream = req?._simulate_non_stream;
+  
   if (!body.stream) {
     res.json({
       id: messageId,
@@ -75,6 +80,110 @@ export async function streamOpenAIResponse(
     });
     res.end();
     return;
+  }
+  
+  // 处理模拟非流式请求
+  if (simulateNonStream) {
+    log("模拟非流式请求，收集所有分块...");
+    
+    // 收集所有分块
+    const chunks = [];
+    try {
+      for await (const chunk of completion) {
+        chunks.push(chunk);
+      }
+      
+      // 合并所有分块的内容
+      let mergedContent = "";
+      let toolCalls: Array<{
+        id: string;
+        type: string;
+        function: {
+          name?: string;
+          arguments: any;
+        };
+      }> = [];
+      let finishReason = "end_turn";
+      
+      for (const chunk of chunks) {
+        const delta = chunk.choices[0].delta;
+        
+        // 收集文本内容
+        if (delta.content) {
+          mergedContent += delta.content;
+        }
+        
+        // 收集工具调用
+        if (delta.tool_calls && delta.tool_calls.length > 0) {
+          finishReason = "tool_use";
+          // 处理工具调用
+          for (const toolCall of delta.tool_calls) {
+            const existingToolCall = toolCalls.find(t => t.id === toolCall.id);
+            if (existingToolCall) {
+              // 合并参数
+              if (toolCall.function?.arguments) {
+                existingToolCall.function.arguments += toolCall.function.arguments;
+              }
+            } else if (toolCall.id) {
+              // 添加新的工具调用
+              toolCalls.push({
+                id: toolCall.id,
+                type: "function",
+                function: {
+                  name: toolCall.function?.name,
+                  arguments: toolCall.function?.arguments || ""
+                }
+              });
+            }
+          }
+        }
+        
+        // 检查完成原因
+        if (chunk.choices[0].finish_reason) {
+          finishReason = chunk.choices[0].finish_reason === 'tool_calls' ? "tool_use" : "end_turn";
+        }
+      }
+      
+      // 处理工具调用的参数，确保是有效的 JSON
+      for (const toolCall of toolCalls) {
+        try {
+          if (toolCall.function?.arguments) {
+            toolCall.function.arguments = JSON.parse(toolCall.function.arguments);
+          }
+        } catch (e) {
+          log("解析工具调用参数失败:", e);
+        }
+      }
+      
+      // 构造响应
+      const response = {
+        id: messageId,
+        type: "message",
+        role: "assistant",
+        content: toolCalls.length > 0 
+          ? toolCalls.map(item => ({
+              type: 'tool_use',
+              id: item.id,
+              name: item.function?.name,
+              input: item.function?.arguments || {},
+            }))
+          : mergedContent,
+        stop_reason: finishReason,
+        stop_sequence: null,
+        usage: {
+          input_tokens: 100,
+          output_tokens: chunks.length * 5, // 粗略估计
+        },
+      };
+      
+      log("模拟非流式响应:", response);
+      res.json(response);
+      res.end();
+      return;
+    } catch (e) {
+      log("模拟非流式请求处理出错:", e);
+      // 如果出错，继续尝试正常的流式处理
+    }
   }
 
   let contentBlockIndex = 0;

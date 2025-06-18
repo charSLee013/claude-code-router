@@ -161,7 +161,7 @@ async function run(options: RunOptions = {}) {
     try {
       const provider = getProviderInstance(req.provider || "default");
       const completion: any = await provider.chat.completions.create(req.body);
-      await streamOpenAIResponse(res, completion, req.body.model, req.body);
+      await streamOpenAIResponse(res, completion, req.body.model, req.body, req);
     } catch (e) {
       console.error("Error in OpenAI API call:", e);
     }

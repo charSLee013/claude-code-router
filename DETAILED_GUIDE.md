@@ -99,6 +99,66 @@
       }
       ```
 
+### 高级 Provider 配置选项
+
+除了基本字段外，`providers` 对象还支持一些高级选项，以提供更强的定制能力。
+
+#### `extra_body`: 注入额外请求参数
+
+- **作用**: `extra_body` 允许您为某个特定的 `provider` 定义一个 JSON 对象。这个对象的内容将会与原始请求的 `body` 进行深度合并。如果原始请求和 `extra_body` 中存在相同的键，`extra_body` 中的值将覆盖原始请求中的值。
+- **使用场景**: 当某个模型需要特定的、非标准的参数时，此功能非常有用。例如，某些模型可能需要一个特殊的 `enable_thinking: true` 参数来激活其思维链能力。
+- **配置示例**:
+  ```json
+  {
+    "id": "qwen-coder-thinking",
+    "api_base_url": "http://localhost:11434/v1",
+    "api_key": "ollama",
+    "model": "qwen:latest",
+    "extra_body": {
+      "enable_thinking": true,
+      "temperature": 0.1
+    }
+  }
+  ```
+- **关键代码** (`src/middlewares/formatRequest.ts`):
+  ```typescript
+  // 确保 req.body.extra_body 被初始化
+  const initialExtraBody = req.body.extra_body || {};
+  const providerExtraBody = currentProvider?.extra_body || {};
+
+  // 合并 provider 的 extra_body
+  const mergedExtraBody = { ...initialExtraBody, ...providerExtraBody };
+
+  if (Object.keys(mergedExtraBody).length > 0) {
+    req.body = { ...req.body, ...mergedExtraBody };
+    log("Merged extra_body:", mergedExtraBody);
+  }
+  // 删除临时字段
+  delete req.body.extra_body;
+  ```
+
+#### `force_stream_for_thinking`: 强制开启思考模式流式传输
+
+- **作用**: 当此选项设置为 `true` 时，如果一个请求被 `Router` 路由到了 `think` 模型，即使原始请求本身是**非流式**的（`stream: false`），代理服务也会强制以**流式**方式向上游 LLM 发起请求。然后，代理会在内部将所有流式数据块（chunks）聚合成一个完整的、非流式的响应，再返回给客户端。
+- **使用场景**: 这个功能主要用于改善用户体验。某些工具（如 `claude-code` 的某些版本）在执行"思考"任务时可能会发送非流式请求。如果 `think` 模型（通常是较慢、较强的模型）处理时间很长，客户端可能会因为超时而断开连接。通过强制流式传输，客户端可以立即收到数据流，避免超时，同时代理服务在后台完成聚合，最终返回一个与原始非流式请求格式兼容的响应。
+- **关键代码** (`src/middlewares/formatRequest.ts`):
+  ```typescript
+  if (req.body.thinking && currentProvider?.force_stream_for_thinking) {
+    log("Forcing stream for thinking request.");
+    req.body.stream = true;
+    req._simulate_non_stream = true; // 设置一个内部标志
+  }
+  ```
+- **关键代码** (`src/utils/stream.ts`):
+  ```typescript
+  // 在 streamOpenAIResponse 函数中
+  if (req?._simulate_non_stream) {
+    // ... 此处省略聚合所有 chunks 的逻辑 ...
+    // 最后构建一个非流式的 JSON 响应并返回
+    res.json(finalResponse);
+  }
+  ```
+
 ### `LOG`: 开启文件日志
 
 当设置为 `true` 时，此选项会开启详细的文件日志记录功能。

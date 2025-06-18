@@ -55,7 +55,11 @@ Set up your `~/.claude-code-router/config.json` file like this:
       "id": "qwen-coder",
       "api_base_url": "http://localhost:11434/v1",
       "api_key": "ollama",
-      "model": "qwen2.5-coder:latest"
+      "model": "qwen:latest",
+      "extra_body": {
+        "enable_thinking": true
+      },
+      "force_stream_for_thinking": true
     }
   ],
   "Router": {
@@ -75,6 +79,8 @@ The new configuration uses a simplified structure:
   - `api_base_url`: API endpoint URL
   - `api_key`: API key for authentication
   - `model`: The actual model name to use
+  - `extra_body` (Optional): An object that will be deeply merged into the request body for every request to this provider. This is useful for models that require special parameters.
+  - `force_stream_for_thinking` (Optional): If set to `true`, it forces the request to be streamed when using the "think" model, even if the original request was not streaming. The response will be aggregated and returned as a complete JSON object. For more technical details, please refer to the [Detailed Guide](./DETAILED_GUIDE.md).
 
 - **`Router`**: Routes for different scenarios, using model IDs:
   - `background`: Model ID for background tasks
