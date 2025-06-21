@@ -190,7 +190,7 @@ export const formatRequest = async (
     res.setHeader("Connection", "keep-alive");
     
     // 获取当前 provider 的配置
-    const currentProvider = req.config.providers.find((p: { id: string }) => p.id === req.provider);
+    const currentProvider = req.config.providers?.find((p: { id: string }) => p.id === req.provider);
 
     // 合并请求中的 extra_body 和 provider 配置中的 extra_body
     const initialExtraBody = req.body.extra_body || {};

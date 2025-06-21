@@ -35,4 +35,21 @@ export const DEFAULT_CONFIG = {
   OPENAI_BASE_URL: "",
   OPENAI_MODEL: "",
   basePort: 3456, // 新增基础端口配置
+  timeout: 30000,
+  maxRetries: 3,
+  logEnabled: false,
+  autoStart: false,
+  providers: [
+    {
+      id: "default",
+      api_base_url: "",
+      api_key: "",
+      model: "gpt-3.5-turbo"
+    }
+  ],
+  Router: {
+    background: "",
+    think: "",
+    longContext: ""
+  }
 };

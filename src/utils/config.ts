@@ -10,17 +10,26 @@ export interface Config {
   log?: boolean;
   timeout?: number;
   maxRetries?: number;
-  providers?: {
-    openai?: {
-      apiKey?: string;
-      model?: string;
-      baseUrl?: string;
-    };
-    anthropic?: {
-      apiKey?: string;
-      model?: string;
-    };
+  OPENAI_API_KEY?: string;
+  OPENAI_BASE_URL?: string;
+  OPENAI_MODEL?: string;
+  basePort?: number;
+  logEnabled?: boolean;
+  autoStart?: boolean;
+  providers?: Array<{
+    id: string;
+    api_base_url: string;
+    api_key: string;
+    model: string;
+    extra_body?: Record<string, any>;
+    force_stream_for_thinking?: boolean;
+  }>;
+  Router?: {
+    background?: string;
+    think?: string;
+    longContext?: string;
   };
+  usePlugins?: string[];
   features?: {
     autostart?: boolean;
     enableLogging?: boolean;

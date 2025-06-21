@@ -1,9 +1,9 @@
 {
   "name": "@musistudio/claude-code-router",
   "version": "1.0.5",
-  "description": "Use Claude Code without an Anthropics account and route it to another LLM provider",
+  "description": "Claude Code Bridge (CCB) - An intelligent request routing tool for Claude Code with workspace-level service management",
   "bin": {
-    "ccr": "./dist/cli.js"
+    "ccb": "./dist/cli.js"
   },
   "scripts": {
     "build": "esbuild src/cli.ts --bundle --platform=node --outfile=dist/cli.js",
@@ -13,9 +13,13 @@
   "keywords": [
     "claude",
     "code",
+    "bridge",
     "router",
     "llm",
-    "anthropic"
+    "anthropic",
+    "workspace",
+    "ai",
+    "proxy"
   ],
   "author": "musistudio",
   "license": "MIT",

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Claude Code Router 构建与安装脚本
-# 此脚本用于自动化 Claude Code Router 的构建和安装过程
+# Claude Code Bridge (CCB) 构建与安装脚本
+# 此脚本用于自动化 Claude Code Bridge 的构建和安装过程
 
 # 颜色定义
 RED='\033[0;31m'
@@ -37,7 +37,7 @@ check_command() {
 
 # 显示脚本头部
 echo -e "${BLUE}====================================${NC}"
-echo -e "${BLUE}  Claude Code Router 构建与安装脚本  ${NC}"
+echo -e "${BLUE}  Claude Code Bridge (CCB) 构建与安装脚本  ${NC}"
 echo -e "${BLUE}====================================${NC}"
 echo ""
 
@@ -101,13 +101,10 @@ log_success "依赖安装完成"
 log_info "构建项目..."
 if [ "$PACKAGE_MANAGER" = "pnpm" ]; then
     pnpm run build
-    pnpm run buildserver
 elif [ "$PACKAGE_MANAGER" = "yarn" ]; then
     yarn build
-    yarn buildserver
 else
     npm run build
-    npm run buildserver
 fi
 
 if [ $? -ne 0 ]; then
@@ -127,7 +124,7 @@ chmod +x "$CLI_FILE"
 log_success "已设置 CLI 文件执行权限"
 
 # 全局安装
-log_info "全局安装 Claude Code Router..."
+log_info "全局安装 Claude Code Bridge (CCB)..."
 # 优先使用 npm link，因为它对于 bin 文件链接更可靠
 npm link
 
@@ -137,63 +134,104 @@ if [ $? -ne 0 ]; then
 fi
 log_success "全局安装完成"
 
-# 创建配置目录和文件
-CONFIG_DIR="$HOME/.claude-code-router"
-CONFIG_FILE="$CONFIG_DIR/config.json"
+# 创建全局配置目录和文件
+GLOBAL_CONFIG_DIR="$HOME/.ccb"
+GLOBAL_CONFIG_FILE="$GLOBAL_CONFIG_DIR/config.json"
 
-log_info "创建配置目录和文件..."
-if [ ! -d "$CONFIG_DIR" ]; then
-    mkdir -p "$CONFIG_DIR"
-    log_success "已创建配置目录: $CONFIG_DIR"
+log_info "创建全局配置目录和文件..."
+if [ ! -d "$GLOBAL_CONFIG_DIR" ]; then
+    mkdir -p "$GLOBAL_CONFIG_DIR"
+    log_success "已创建全局配置目录: $GLOBAL_CONFIG_DIR"
 fi
 
-if [ ! -f "$CONFIG_FILE" ]; then
-    cat > "$CONFIG_FILE" << EOF
+if [ ! -f "$GLOBAL_CONFIG_FILE" ]; then
+    cat > "$GLOBAL_CONFIG_FILE" << EOF
 {
+  "OPENAI_API_KEY": "your-api-key",
+  "OPENAI_BASE_URL": "https://api.deepseek.com",
+  "OPENAI_MODEL": "deepseek-chat",
+  "basePort": 3456,
+  "timeout": 30000,
+  "maxRetries": 3,
+  "logEnabled": false,
+  "autoStart": false,
   "providers": [
     {
-      "id": "default-model",
-      "api_base_url": "https://api.openai.com/v1",
-      "api_key": "your-api-key",
-      "model": "gpt-3.5-turbo"
+      "id": "deepseek-chat",
+      "api_base_url": "https://api.deepseek.com",
+      "api_key": "your-deepseek-api-key",
+      "model": "deepseek-chat"
     },
     {
       "id": "qwen-coder",
       "api_base_url": "http://localhost:11434/v1",
       "api_key": "ollama",
-      "model": "qwen:latest",
+      "model": "qwen2.5-coder:latest",
       "extra_body": {
-        "enable_thinking": true
+        "enable_thinking": true,
+        "temperature": 0.1
       },
       "force_stream_for_thinking": true
+    },
+    {
+      "id": "deepseek-reasoner",
+      "api_base_url": "https://api.deepseek.com",
+      "api_key": "your-deepseek-api-key",
+      "model": "deepseek-reasoner"
+    },
+    {
+      "id": "gemini-2.5-pro",
+      "api_base_url": "https://openrouter.ai/api/v1",
+      "api_key": "your-openrouter-api-key",
+      "model": "google/gemini-2.5-pro-preview"
     }
   ],
   "Router": {
     "background": "qwen-coder",
-    "think": "default-model",
-    "longContext": "default-model"
+    "think": "deepseek-reasoner",
+    "longContext": "gemini-2.5-pro"
   }
 }
 EOF
-    log_success "已创建默认配置文件: $CONFIG_FILE"
+    log_success "已创建默认全局配置文件: $GLOBAL_CONFIG_FILE"
     log_warning "请编辑配置文件，填入您的 API 密钥和其他设置"
 else
-    log_info "配置文件已存在: $CONFIG_FILE"
+    log_info "全局配置文件已存在: $GLOBAL_CONFIG_FILE"
+fi
+
+# 清理旧的配置目录 (如果存在)
+OLD_CONFIG_DIR="$HOME/.claude-code-router"
+if [ -d "$OLD_CONFIG_DIR" ]; then
+    log_warning "检测到旧的配置目录: $OLD_CONFIG_DIR"
+    read -p "是否要删除旧的配置目录？(y/n) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        rm -rf "$OLD_CONFIG_DIR"
+        log_success "已删除旧的配置目录"
+    fi
 fi
 
 # 显示使用说明
 echo ""
 echo -e "${GREEN}====================================${NC}"
-echo -e "${GREEN}  Claude Code Router 安装成功!  ${NC}"
+echo -e "${GREEN}  Claude Code Bridge (CCB) 安装成功!  ${NC}"
 echo -e "${GREEN}====================================${NC}"
 echo ""
-echo "配置文件位置: $CONFIG_FILE"
+echo "全局配置文件位置: $GLOBAL_CONFIG_FILE"
 echo ""
 echo "使用方法:"
-echo "1. 编辑配置文件，设置您的 API 密钥和模型配置"
-echo "2. 运行命令: ccr code"
+echo "1. 编辑全局配置文件，设置您的 API 密钥和模型配置"
+echo "2. 在项目目录中运行: ccb start"
+echo "3. 使用 Claude Code: ccb code \"your prompt\""
+echo "4. 查看服务状态: ccb status"
+echo "5. 停止服务: ccb stop"
 echo ""
-echo "更多信息，请参考项目文档。"
+echo "工作区特性:"
+echo "- 每个项目目录独立运行服务"
+echo "- 自动创建 .ccb/ 目录存储工作区配置和日志"
+echo "- 支持工作区级配置覆盖全局配置"
+echo ""
+echo "更多信息，请参考 README.md 和 DETAILED_GUIDE.md 文档。"
 echo ""
 
 exit 0 
