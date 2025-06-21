@@ -1,36 +1,89 @@
-# Claude Code Router
+# Claude Code Bridge (CCB)
 
-> This is a tool for routing Claude Code requests to different models, and you can customize any request.
-
+> 一个智能的 Claude Code 请求路由工具，支持工作区级服务管理和多模型动态切换。
 
 ![](screenshoots/claude-code.png)
 
-## Usage
+## 核心特性
 
-1. Install Claude Code
+- 🚀 **工作区级服务隔离**: 每个项目目录独立运行服务，互不干扰
+- 🎯 **智能模型路由**: 根据任务类型自动选择最合适的模型
+- 🔀 **随机端口分配**: 自动分配可用端口，避免冲突
+- ⚙️ **三层配置系统**: 灵活的配置优先级管理
+- 🔧 **完全兼容**: 与现有 Claude Code 工作流无缝集成
+
+## 安装使用
+
+### 1. 安装 Claude Code
 
 ```shell
 npm install -g @anthropic-ai/claude-code
 ```
 
-2. Install Claude Code Router
+### 2. 安装 Claude Code Bridge
 
 ```shell
 npm install -g @musistudio/claude-code-router
 ```
 
-3. Start Claude Code by claude-code-router
+### 3. 启动服务
+
+在任意项目目录下执行：
 
 ```shell
-ccr code
+ccb start
 ```
 
-4. Configure routing[optional]    
-Set up your `~/.claude-code-router/config.json` file like this:
+### 4. 使用 Claude Code
+
+```shell
+ccb code "你的编程任务"
+```
+
+### 5. 管理服务
+
+```shell
+# 查看当前工作区服务状态
+ccb status
+
+# 停止当前工作区服务
+ccb stop
+
+# 查看帮助信息
+ccb --help
+```
+
+## 配置系统
+
+CCB 使用三层配置系统，优先级从高到低：
+
+1. **环境变量** (最高优先级)
+2. **工作区配置**: `<your-project>/.ccb/config.json`
+3. **全局配置**: `~/.ccb/config.json` (最低优先级)
+
+### 基础配置示例
+
+创建配置文件 `~/.ccb/config.json` 或在项目目录下创建 `.ccb/config.json`：
+
 ```json
 {
   "OPENAI_API_KEY": "sk-xxx",
   "OPENAI_BASE_URL": "https://api.deepseek.com",
+  "OPENAI_MODEL": "deepseek-chat",
+  "basePort": 3456,
+  "timeout": 30000,
+  "maxRetries": 3,
+  "logEnabled": false,
+  "autoStart": false
+}
+```
+
+### 高级路由配置
+
+```json
+{
+  "OPENAI_API_KEY": "sk-xxx",
+  "OPENAI_BASE_URL": "https://api.deepseek.com", 
   "OPENAI_MODEL": "deepseek-chat",
   "providers": [
     {
@@ -41,7 +94,7 @@ Set up your `~/.claude-code-router/config.json` file like this:
     },
     {
       "id": "claude-sonnet-4",
-      "api_base_url": "https://openrouter.ai/api/v1",
+      "api_base_url": "https://openrouter.ai/api/v1", 
       "api_key": "sk-xxx",
       "model": "anthropic/claude-sonnet-4"
     },
@@ -64,65 +117,125 @@ Set up your `~/.claude-code-router/config.json` file like this:
   ],
   "Router": {
     "background": "qwen-coder",
-    "think": "deepseek-reasoner",
+    "think": "deepseek-reasoner", 
     "longContext": "gemini-2.5-pro"
   }
 }
 ```
 
-### Configuration Structure
+## 路由规则详解
 
-The new configuration uses a simplified structure:
+### 智能路由场景
 
-- **`providers`**: An array of model configurations, each with:
-  - `id`: Unique identifier for the model
-  - `api_base_url`: API endpoint URL
-  - `api_key`: API key for authentication
-  - `model`: The actual model name to use
-  - `extra_body` (Optional): An object that will be deeply merged into the request body for every request to this provider. This is useful for models that require special parameters.
-  - `force_stream_for_thinking` (Optional): If set to `true`, it forces the request to be streamed when using the "think" model, even if the original request was not streaming. The response will be aggregated and returned as a complete JSON object. For more technical details, please refer to the [Detailed Guide](./DETAILED_GUIDE.md).
+- **`background`**: 处理后台任务和轻量级操作
+  - 触发条件: Claude Code 内部后台任务 (`claude-3-5-haiku` 模型请求)
+  - 推荐: 本地 Ollama 模型或免费 API
 
-- **`Router`**: Routes for different scenarios, using model IDs:
-  - `background`: Model ID for background tasks
-  - `think`: Model ID for reasoning tasks
-  - `longContext`: Model ID for long context scenarios
+- **`think`**: 处理需要深度推理的复杂任务  
+  - 触发条件: 请求包含 `thinking: true` 标志
+  - 推荐: DeepSeek-R1, Claude-4 等强推理模型
 
-### Route Descriptions
+- **`longContext`**: 处理超长上下文场景
+  - 触发条件: 请求 token 数量 > 32,000
+  - 推荐: Gemini-2.5-Pro 等长上下文模型
 
-- `background`    
-This model will be used to handle some background tasks([background-token-usage](https://docs.anthropic.com/en/docs/claude-code/costs#background-token-usage)). Based on my tests, it doesn't require high intelligence. I'm using the qwen-coder-2.5:7b model running locally on my MacBook Pro M1 (32GB) via Ollama.
-If your computer can't run Ollama, you can also use some free models, such as qwen-coder-2.5:3b.
+### 手动切换模型
 
-- `think`    
-This model will be used when enabling Claude Code to perform reasoning. However, reasoning budget control has not yet been implemented (since the DeepSeek-R1 model does not support it), so there is currently no difference between using UltraThink and Think modes.
-It is worth noting that Plan Mode also use this model to achieve better planning results.    
-Note: The reasoning process via the official DeepSeek API may be very slow, so you may need to wait for an extended period of time.
+在 Claude Code 中使用 `/model` 命令：
 
-- `longContext`   
-This model will be used when the context length exceeds 32K (this value may be modified in the future). You can route the request to a model that performs well with long contexts (I've chosen google/gemini-2.5-pro-preview). This scenario has not been thoroughly tested yet, so if you encounter any issues, please submit an issue.
+```
+/model claude-sonnet-4,anthropic/claude-sonnet-4
+```
 
-- model command   
-You can also switch models within Claude Code by using the `/model` command. The format is: `provider,model`, like this:     
-`/model claude-sonnet-4,anthropic/claude-sonnet-4`    
-This will use the claude-sonnet-4 provider configuration to handle all subsequent tasks.
+格式: `/model provider_id,model_name`
 
-## Features
-- [x] Plugins
-- [x] Support change models
-- [x] Simplified configuration structure
-- [ ] Support scheduled tasks
+## 工作区特性
 
-## Some tips:
-Now you can use deepseek-v3 models directly without using any plugins.
+### 独立服务管理
 
-If you're using the DeepSeek API provided by the official website, you might encounter an "exceeding context" error after several rounds of conversation (since the official API only supports a 64K context window). In this case, you'll need to discard the previous context and start fresh. Alternatively, you can use ByteDance's DeepSeek API, which offers a 128K context window and supports KV cache.
+每个项目目录都拥有独立的服务实例：
 
-![](screenshoots/contexterror.jpg)
+- 独立的进程和端口
+- 独立的配置文件 (`.ccb/config.json`)
+- 独立的日志文件 (`.ccb/service.log`)
+- 独立的状态管理 (`.ccb/service.json`)
 
-Note: claude code consumes a huge amount of tokens, but thanks to DeepSeek's low cost, you can use claude code at a fraction of Claude's price, and you don't need to subscribe to the Claude Max plan.
+### 自动端口分配
 
-Some interesting points: Based on my testing, including a lot of context information can help narrow the performance gap between these LLM models. For instance, when I used Claude-4 in VSCode Copilot to handle a Flutter issue, it messed up the files in three rounds of conversation, and I had to roll everything back. However, when I used claude code with DeepSeek, after three or four rounds of conversation, I finally managed to complete my task—and the cost was less than 1 RMB!
+- 服务启动时自动分配随机可用端口
+- 避免多项目间的端口冲突
+- 支持自定义端口范围配置
 
-## Buy me a coffee
-If you find this project helpful, you can choose to sponsor the author with a cup of coffee.
+### 工作区目录结构
+
+```
+your-project/
+├── .ccb/
+│   ├── config.json      # 工作区配置
+│   ├── service.log      # 服务日志  
+│   └── service.json     # 服务状态
+├── .gitignore           # 自动更新忽略 .ccb/ 目录
+└── your-code-files...
+```
+
+## 配置选项详解
+
+### 基础配置
+
+| 选项 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `basePort` | number | 3456 | 端口分配起始范围 |
+| `timeout` | number | 30000 | 请求超时时间(ms) |
+| `maxRetries` | number | 3 | 最大重试次数 |
+| `logEnabled` | boolean | false | 是否启用文件日志 |
+| `autoStart` | boolean | false | 是否自动启动服务 |
+
+### Provider 高级选项
+
+- **`extra_body`**: 注入额外请求参数，与原始请求合并
+- **`force_stream_for_thinking`**: 强制推理任务使用流式传输
+
+## 使用技巧
+
+### 成本优化
+
+- 使用本地 Ollama 模型处理 `background` 任务
+- 选择性地为复杂任务启用强大模型
+- 利用 DeepSeek 等低成本 API 替代昂贵的 Claude API
+
+### 性能优化
+
+- 为不同项目配置不同的 provider 组合
+- 使用工作区配置覆盖全局设置
+- 启用日志调试性能瓶颈
+
+### 多项目协作
+
+- 每个项目独立配置，互不影响
+- 共享全局配置，项目特殊配置覆盖
+- 使用环境变量进行敏感信息管理
+
+## 故障排除
+
+### 常见问题
+
+1. **端口被占用**: CCB 会自动分配随机端口，无需手动处理
+2. **配置不生效**: 检查配置文件优先级，工作区配置会覆盖全局配置
+3. **服务启动失败**: 使用 `ccb status` 查看详细状态信息
+
+### 调试模式
+
+启用日志查看详细信息：
+
+```json
+{
+  "logEnabled": true
+}
+```
+
+日志文件位置: `<workspace>/.ccb/service.log`
+
+## 支持作者
+
+如果这个项目对你有帮助，欢迎支持作者：
 [Buy me a coffee](http://paypal.me/musistudio1999)

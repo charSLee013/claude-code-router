@@ -1,297 +1,629 @@
-# Claude Code Router 深度解析与高级指南
+# Claude Code Bridge (CCB) 深度解析与高级指南
 
-本文档旨在提供一个比官方 `README.md` 更为详尽的指南，内容涵盖 Claude Code Router 的核心概念、配置文件深度解析、工作原理、高级定制化开发以及开发者调试方法。本文档整合了我们之前的讨论，并引用了关键源代码作为依据，以帮助您完全掌握这个强大的工具。
+本文档提供 Claude Code Bridge 的深入技术解析，涵盖核心架构、配置系统、工作区管理、高级定制开发以及调试方法。本指南基于最新的实现，为开发者和高级用户提供完整的技术参考。
 
-## 核心概念：一个智能请求代理
+## 核心概念：工作区级智能代理架构
 
-从本质上讲，`claude-code-router` 并不是一个独立的 AI 模型，而是一个位于您和各种大型语言模型（LLM）之间的**智能代理服务器（Proxy）**。
+Claude Code Bridge (CCB) 是一个**工作区级的智能代理服务器**，它为每个项目目录提供独立的服务实例，实现真正的项目隔离和个性化配置。
 
-当您在 `claude-code` 工具中输入一个指令时，这个请求首先会被发送到本地运行的 `claude-code-router`。路由器会拦截这个请求，然后像一个经验丰富的调度员，根据您预设的规则，决定将这个请求"转发"给哪个最合适的 LLM 服务（例如 OpenRouter, DeepSeek, 或本地的 Ollama）。
+### 架构特点
 
-这种设计的核心优势在于**灵活性**和**成本效益**：
-- **物尽其用**：让强大的模型处理复杂任务（如深度思考和规划），让轻量级、廉价甚至免费的模型处理常规或后台任务。
-- **高度定制**：您可以根据自己的需求，为任何模型（只要它兼容 OpenAI API 格式）添加定制化的适配逻辑。
-- **无缝体验**：对于使用者来说，这一切都是在后台自动发生的，提供了无缝切换的流畅体验。
+1. **工作区隔离**: 每个项目目录运行独立的服务进程，拥有独立的配置、日志和状态管理
+2. **智能路由**: 根据请求特征自动选择最合适的 LLM 模型
+3. **动态端口分配**: 自动分配随机可用端口，避免项目间冲突
+4. **三层配置系统**: 灵活的配置优先级管理，支持全局、工作区和环境变量配置
+
+### 工作原理
+
+当您在项目目录中执行 `ccb code "your prompt"` 时，CCB 会：
+
+1. **检查工作区服务**: 确认当前工作区是否已有运行的服务实例
+2. **启动独立服务**: 如果没有，则为当前工作区启动独立的代理服务
+3. **加载配置**: 按优先级加载环境变量、工作区配置和全局配置
+4. **分配端口**: 随机分配可用端口并保存到工作区状态文件
+5. **路由请求**: 根据请求特征智能选择合适的 LLM 提供商
+6. **返回结果**: 将响应流式传输回 Claude Code 客户端
 
 ---
 
-## 配置文件深度解析 (`~/.claude-code-router/config.json`)
+## 三层配置系统深度解析
 
-配置文件是路由器的"大脑"，所有行为都由此文件定义。下面我们对其进行详细解析。
+CCB 实现了灵活的三层配置系统，提供强大的配置管理能力。
 
-### `providers`: 定义您的模型库
+### 配置优先级
 
-`providers` 是一个数组，用于定义您可以使用的所有模型。
+1. **环境变量** (最高优先级)
+2. **工作区配置**: `<project-dir>/.ccb/config.json`
+3. **全局配置**: `~/.ccb/config.json` (最低优先级)
 
-```json
-"providers": [
-  {
-    "id": "gemini-2.5-pro",
-    "api_base_url": "https://openrouter.ai/api/v1",
-    "api_key": "sk-xxx",
-    "model": "google/gemini-2.5-pro-preview"
-  },
-  {
-    "id": "qwen-coder",
-    "api_base_url": "http://localhost:11434/v1",
-    "api_key": "ollama",
-    "model": "qwen2.5-coder:latest"
+### 配置加载机制
+
+**关键代码** (`src/utils/config.ts`):
+```typescript
+export function loadConfig(cwd: string): any {
+  // 1. 加载默认配置
+  let config = { ...DEFAULT_CONFIG };
+  
+  // 2. 合并全局配置
+  const globalConfig = loadGlobalConfig();
+  if (globalConfig) {
+    config = { ...config, ...globalConfig };
   }
-]
-```
-- `id`: 模型的唯一标识符，在 `Router` 规则中会用到。
-- `api_base_url`: 该提供商的 API 端点地址。
-- `api_key`: 对应的 API 密钥。
-- `model`: 实际使用的模型名称。
-
-### `Router`: 设置智能路由规则
-
-`Router` 对象是路由功能的核心，它定义了在特定场景下应该使用哪个模型。
-
-```json
-"Router": {
-  "background": "qwen-coder",
-  "think": "deepseek-reasoner",
-  "longContext": "gemini-2.5-pro"
+  
+  // 3. 合并工作区配置  
+  const workspaceConfig = loadWorkspaceConfig(cwd);
+  if (workspaceConfig) {
+    config = { ...config, ...workspaceConfig };
+  }
+  
+  // 4. 应用环境变量（最高优先级）
+  applyEnvironmentVariables(config);
+  
+  return config;
 }
 ```
 
-- **`background`**: 用于处理 `claude-code` 的一些内部后台任务。
-    - **触发逻辑**: 当 `claude-code` 请求的模型是 `claude-3-5-haiku` 时触发。
-    - **关键代码** (`src/middlewares/router.ts`):
-      ```typescript
-      if (req.body.model?.startsWith("claude-3-5-haiku")) {
-        log("Using background model for ", req.body.model);
-        const modelId = req.config.Router!.background;
-        return {
-          provider: modelId,
-          model: modelId,
-        };
-      }
-      ```
+### 工作区目录结构
 
-- **`think`**: 用于处理需要深度思考和规划的复杂任务。
-    - **触发逻辑**: 当 `claude-code` 在请求体中包含了 `thinking: true` 标志时触发。
-    - **关键代码** (`src/middlewares/router.ts`):
-      ```typescript
-      if (req.body.thinking) {
-        log("Using think model for ", req.body.thinking);
-        const modelId = req.config.Router!.think;
-        return {
-          provider: modelId,
-          model: modelId,
-        };
-      }
-      ```
+```
+your-project/
+├── .ccb/
+│   ├── config.json      # 工作区配置文件
+│   ├── service.log      # 服务日志文件
+│   └── service.json     # 服务状态文件
+├── .gitignore           # 自动更新以忽略 .ccb/ 目录
+└── your-source-files/
+```
 
-- **`longContext`**: 用于处理超长上下文的请求。
-    - **触发逻辑**: 当整个请求的 token 数量超过 32,000 时触发。
-    - **关键代码** (`src/middlewares/router.ts`):
-      ```typescript
-      // 首先计算 tokenCount
-      if (tokenCount > 1000 * 32) {
-        log("Using long context model due to token count:", tokenCount);
-        const modelId = req.config.Router!.longContext;
-        return {
-          provider: modelId,
-          model: modelId,
-        };
-      }
-      ```
+### 配置文件格式
 
-### 高级 Provider 配置选项
+#### 基础配置选项
 
-除了基本字段外，`providers` 对象还支持一些高级选项，以提供更强的定制能力。
+```json
+{
+  "OPENAI_API_KEY": "sk-xxx",
+  "OPENAI_BASE_URL": "https://api.deepseek.com",
+  "OPENAI_MODEL": "deepseek-chat",
+  "basePort": 3456,
+  "timeout": 30000,
+  "maxRetries": 3,
+  "logEnabled": false,
+  "autoStart": false
+}
+```
 
-#### `extra_body`: 注入额外请求参数
+#### 高级路由配置
 
-- **作用**: `extra_body` 允许您为某个特定的 `provider` 定义一个 JSON 对象。这个对象的内容将会与原始请求的 `body` 进行深度合并。如果原始请求和 `extra_body` 中存在相同的键，`extra_body` 中的值将覆盖原始请求中的值。
-- **使用场景**: 当某个模型需要特定的、非标准的参数时，此功能非常有用。例如，某些模型可能需要一个特殊的 `enable_thinking: true` 参数来激活其思维链能力。
-- **配置示例**:
-  ```json
-  {
-    "id": "qwen-coder-thinking",
-    "api_base_url": "http://localhost:11434/v1",
-    "api_key": "ollama",
-    "model": "qwen:latest",
-    "extra_body": {
-      "enable_thinking": true,
-      "temperature": 0.1
+```json
+{
+  "providers": [
+    {
+      "id": "local-qwen",
+      "api_base_url": "http://localhost:11434/v1",
+      "api_key": "ollama",
+      "model": "qwen2.5-coder:latest",
+      "extra_body": {
+        "enable_thinking": true,
+        "temperature": 0.1
+      },
+      "force_stream_for_thinking": true
     }
+  ],
+  "Router": {
+    "background": "local-qwen",
+    "think": "deepseek-reasoner", 
+    "longContext": "gemini-2.5-pro"
   }
-  ```
-- **关键代码** (`src/middlewares/formatRequest.ts`):
-  ```typescript
-  // 确保 req.body.extra_body 被初始化
-  const initialExtraBody = req.body.extra_body || {};
-  const providerExtraBody = currentProvider?.extra_body || {};
-
-  // 合并 provider 的 extra_body
-  const mergedExtraBody = { ...initialExtraBody, ...providerExtraBody };
-
-  if (Object.keys(mergedExtraBody).length > 0) {
-    req.body = { ...req.body, ...mergedExtraBody };
-    log("Merged extra_body:", mergedExtraBody);
-  }
-  // 删除临时字段
-  delete req.body.extra_body;
-  ```
-
-#### `force_stream_for_thinking`: 强制开启思考模式流式传输
-
-- **作用**: 当此选项设置为 `true` 时，如果一个请求被 `Router` 路由到了 `think` 模型，即使原始请求本身是**非流式**的（`stream: false`），代理服务也会强制以**流式**方式向上游 LLM 发起请求。然后，代理会在内部将所有流式数据块（chunks）聚合成一个完整的、非流式的响应，再返回给客户端。
-- **使用场景**: 这个功能主要用于改善用户体验。某些工具（如 `claude-code` 的某些版本）在执行"思考"任务时可能会发送非流式请求。如果 `think` 模型（通常是较慢、较强的模型）处理时间很长，客户端可能会因为超时而断开连接。通过强制流式传输，客户端可以立即收到数据流，避免超时，同时代理服务在后台完成聚合，最终返回一个与原始非流式请求格式兼容的响应。
-- **关键代码** (`src/middlewares/formatRequest.ts`):
-  ```typescript
-  if (req.body.thinking && currentProvider?.force_stream_for_thinking) {
-    log("Forcing stream for thinking request.");
-    req.body.stream = true;
-    req._simulate_non_stream = true; // 设置一个内部标志
-  }
-  ```
-- **关键代码** (`src/utils/stream.ts`):
-  ```typescript
-  // 在 streamOpenAIResponse 函数中
-  if (req?._simulate_non_stream) {
-    // ... 此处省略聚合所有 chunks 的逻辑 ...
-    // 最后构建一个非流式的 JSON 响应并返回
-    res.json(finalResponse);
-  }
-  ```
-
-### `LOG`: 开启文件日志
-
-当设置为 `true` 时，此选项会开启详细的文件日志记录功能。
-
-- **工作原理**:
-    1.  **注入环境变量**: 程序启动时，`initConfig` 函数会将 `config.json` 的内容注入到环境变量中。
-        - **关键代码** (`src/utils/index.ts`):
-          ```typescript
-          export const initConfig = async () => {
-            const config = await readConfigFile();
-            Object.assign(process.env, config); // <-- 此处注入
-            return config;
-          };
-          ```
-    2.  **写入日志**: 程序中每次调用 `log()` 函数时，它会检查环境变量 `process.env.LOG` 是否为 `"true"`。如果是，则将日志信息追加写入到 `~/.claude-code-router/claude-code-router.log` 文件。
-        - **关键代码** (`src/utils/log.ts`):
-          ```typescript
-          export function log(...args: any[]) {
-            const isLogEnabled = process.env.LOG === "true"; // <-- 检查开关
-            if (!isLogEnabled) {
-              return;
-            }
-            // ...
-            fs.appendFileSync(LOG_FILE, logMessage, "utf8"); // <-- 写入文件
-          }
-          ```
+}
+```
 
 ---
 
-## 工作原理解析：请求的生命周期
+## 智能路由系统详解
 
-一个请求从您按下回车到获得返回，经历了以下流程：
+### 路由决策流程
 
-1.  **入口 (`cli.ts`)**: 您执行 `ccr code "your prompt"`。`cli.ts` 负责解析命令，如果代理服务未启动，则先在后台启动它，然后将您的 prompt 发送给代理服务。
-
-2.  **服务初始化 (`index.ts`)**: 代理服务启动时，`index.ts` 中的 `run()` 函数会执行。它负责读取配置、初始化 providers，并创建服务器实例。最重要的是，它在这里**注册了中间件链**。
-    - **关键代码** (`src/index.ts`):
-      ```typescript
-      const server = await createServer(servicePort);
-      // ...
-      server.useMiddleware(rewriteBody);
-      if (config.Router?.background && ...) { // 检查Router配置
-        server.useMiddleware(router);
-      }
-      // ...
-      server.useMiddleware(formatRequest);
-      ```
-
-3.  **中间件链 (Middleware Chain)**: 请求像流水线一样依次通过以下中间件：
-    - `rewriteBody`: 对请求体进行初步的、标准化的重写。
-    - `router`: **核心决策者**。根据我们上面讨论的优先级规则（长上下文 > 后台 > 思考 > 手动指定 > 默认），决定最终使用哪个 `provider` 和 `model`。
-    - `formatRequest`: **最终适配器**。在请求即将被发往目标 LLM 之前，进行最后一次修改，以适配特定模型的需求。
-
-4.  **请求发送与返回**: 请求经过所有中间件的处理后，被发送到由 `router` 决定的目标 LLM API。收到响应后，再通过流式传输返回给 `claude-code` 客户端。
-
----
-
-## 高级定制化开发：适配任何模型
-
-如果某个模型需要特殊的参数或不支持某些标准参数，您可以通过修改 `formatRequest` 中间件来轻松适配。
-
-**核心文件**: `src/middlewares/formatRequest.ts`
-
-**场景举例**: 假设您有一个名为 `my-special-model` 的模型，它不支持 `system` prompt，但需要一个 `custom_instruction` 字段。
-
-您可以这样修改 `formatRequest.ts`:
-
+**关键代码** (`src/middlewares/router.ts`):
 ```typescript
-// src/middlewares/formatRequest.ts
+export const router = async (req, res, next) => {
+  const config = req.config;
+  
+  // 1. 长上下文检测（最高优先级）
+  if (tokenCount > 32000) {
+    const modelId = config.Router.longContext;
+    req.provider = modelId;
+    req.body.model = modelId;
+    return next();
+  }
+  
+  // 2. 后台任务检测
+  if (req.body.model?.startsWith("claude-3-5-haiku")) {
+    const modelId = config.Router.background;
+    req.provider = modelId;
+    req.body.model = modelId;
+    return next();
+  }
+  
+  // 3. 思考模式检测
+  if (req.body.thinking) {
+    const modelId = config.Router.think;
+    req.provider = modelId;
+    req.body.model = modelId;
+    return next();
+  }
+  
+  // 4. 默认路由
+  req.provider = "default";
+  next();
+};
+```
 
-export const formatRequest = async (req, res, next) => {
-  // ... 其他代码 ...
+### 路由规则详解
 
-  // 在函数末尾, next() 之前, 添加您的定制逻辑
-  if (req.provider === 'my-model-id' && req.body.model === 'my-special-model') {
-    // 检查是否存在 system prompt
-    if (req.body.system) {
-        const systemPrompt = Array.isArray(req.body.system) ? req.body.system.join(' ') : req.body.system;
-        req.body.custom_instruction = `Follow this instruction: ${systemPrompt}`;
-        // 删掉原来的 system 字段，避免 API 报错
-        delete req.body.system; 
+#### `background` 路由
+- **触发条件**: `req.body.model` 以 `claude-3-5-haiku` 开头
+- **使用场景**: Claude Code 内部后台任务和轻量级操作
+- **推荐模型**: 本地 Ollama 模型或免费 API
+
+#### `think` 路由
+- **触发条件**: `req.body.thinking === true`
+- **使用场景**: 需要深度推理的复杂任务、规划模式
+- **推荐模型**: DeepSeek-R1、Claude-4 等强推理模型
+
+#### `longContext` 路由
+- **触发条件**: 请求总 token 数量超过 32,000
+- **使用场景**: 处理大型代码库、长文档分析
+- **推荐模型**: Gemini-2.5-Pro 等长上下文模型
+
+---
+
+## 工作区管理系统
+
+### 服务生命周期管理
+
+**关键代码** (`src/utils/processCheck.ts`):
+```typescript
+// 保存服务状态
+export function saveServiceState(cwd: string, pid: number, port: number): void {
+  const { serviceStateFile } = getWorkspacePaths(cwd);
+  const state = { pid, port, startTime: Date.now() };
+  fs.writeFileSync(serviceStateFile, JSON.stringify(state, null, 2));
+}
+
+// 检查服务运行状态
+export function isServiceRunning(cwd: string): boolean {
+  const state = getServiceState(cwd);
+  if (!state) return false;
+  
+  try {
+    process.kill(state.pid, 0); // 检查进程是否存在
+    return true;
+  } catch {
+    cleanupServiceState(cwd);
+    return false;
+  }
+}
+```
+
+### 动态端口分配
+
+**关键代码** (`src/utils/port.ts`):
+```typescript
+export async function findRandomAvailablePort(
+  minPort: number = 3000,
+  maxPort: number = 65535,
+  maxAttempts: number = 100
+): Promise<number> {
+  for (let i = 0; i < maxAttempts; i++) {
+    const port = Math.floor(Math.random() * (maxPort - minPort + 1)) + minPort;
+    
+    if (await isPortAvailable(port)) {
+      return port;
     }
   }
+  
+  throw new Error(`无法找到可用端口：已尝试 ${maxAttempts} 次随机分配`);
+}
+```
 
+### 日志系统
+
+**关键代码** (`src/utils/log.ts`):
+```typescript
+export function log(cwd: string, ...args: any[]): void {
+  const config = loadConfig(cwd);
+  if (!config.logEnabled) return;
+  
+  const { serviceLogFile } = getWorkspacePaths(cwd);
+  const timestamp = new Date().toISOString();
+  const message = `[${timestamp}] ${args.join(' ')}\n`;
+  
+  ensureLogDir(cwd);
+  fs.appendFileSync(serviceLogFile, message, 'utf8');
+}
+```
+
+---
+
+## 请求处理生命周期
+
+### 中间件链架构
+
+CCB 使用中间件链模式处理每个请求：
+
+**关键代码** (`src/index.ts`):
+```typescript
+// 注册中间件链
+server.useMiddleware(rewriteBody);
+if (config.Router?.background && config.Router?.think && config.Router?.longContext) {
+  server.useMiddleware(router);
+} else {
+  server.useMiddleware((req, res, next) => {
+    req.provider = "default";
+    req.body.model = config.OPENAI_MODEL;
+    next();
+  });
+}
+server.useMiddleware(formatRequest);
+```
+
+### 中间件详解
+
+#### 1. `rewriteBody` 中间件
+- **功能**: 标准化和预处理请求体
+- **位置**: `src/middlewares/rewriteBody.ts`
+
+#### 2. `router` 中间件
+- **功能**: 智能路由决策，选择最适合的模型
+- **位置**: `src/middlewares/router.ts`
+
+#### 3. `formatRequest` 中间件
+- **功能**: 最终请求格式化，应用 provider 特定配置
+- **位置**: `src/middlewares/formatRequest.ts`
+
+**关键代码** (`src/middlewares/formatRequest.ts`):
+```typescript
+export const formatRequest = async (req, res, next) => {
+  const providers = new Map(req.config.providers?.map(p => [p.id, p]) || []);
+  const currentProvider = providers.get(req.provider);
+  
+  if (currentProvider) {
+    // 应用 extra_body 配置
+    if (currentProvider.extra_body) {
+      req.body = { ...req.body, ...currentProvider.extra_body };
+    }
+    
+    // 处理 force_stream_for_thinking
+    if (req.body.thinking && currentProvider.force_stream_for_thinking) {
+      req.body.stream = true;
+      req._simulate_non_stream = true;
+    }
+    
+    // 设置模型名称
+    req.body.model = currentProvider.model;
+  }
+  
   next();
 };
 ```
 
 ---
 
+## 高级定制开发
+
+### Provider 扩展配置
+
+#### `extra_body` 深度合并
+
+```json
+{
+  "id": "custom-model",
+  "api_base_url": "http://localhost:8080/v1",
+  "api_key": "custom-key",
+  "model": "custom-model-name",
+  "extra_body": {
+    "enable_reasoning": true,
+    "temperature": 0.1,
+    "custom_params": {
+      "thinking_depth": 3
+    }
+  }
+}
+```
+
+#### `force_stream_for_thinking` 机制
+
+**工作原理**:
+1. 当请求被路由到 `think` 模型且 provider 设置了 `force_stream_for_thinking: true`
+2. 强制将 `req.body.stream` 设置为 `true`
+3. 设置内部标志 `req._simulate_non_stream = true`
+4. 在响应处理中聚合所有流式数据块
+5. 返回完整的非流式响应格式
+
+**关键代码** (`src/utils/stream.ts`):
+```typescript
+export async function streamOpenAIResponse(res, completion, model, requestBody, req) {
+  if (req?._simulate_non_stream) {
+    // 聚合流式响应
+    const chunks = [];
+    for await (const chunk of completion) {
+      chunks.push(chunk);
+    }
+    
+    // 构建完整响应
+    const aggregatedResponse = aggregateStreamChunks(chunks);
+    res.json(aggregatedResponse);
+  } else {
+    // 正常流式传输
+    for await (const chunk of completion) {
+      res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+    }
+    res.end();
+  }
+}
+```
+
+### 自定义中间件开发
+
+您可以在 `formatRequest` 中间件中添加自定义逻辑：
+
+```typescript
+// 在 src/middlewares/formatRequest.ts 的末尾添加
+if (req.provider === 'my-custom-provider') {
+  // 自定义处理逻辑
+  if (req.body.system) {
+    // 转换 system prompt 格式
+    req.body.instruction = req.body.system;
+    delete req.body.system;
+  }
+  
+  // 添加特殊参数
+  req.body.custom_mode = "enhanced";
+}
+```
+
+---
+
 ## 开发者调试指南
 
-您可以使用 VS Code 内置的调试工具进行断点调试。
+### VS Code 调试配置
 
-1.  **修改 `package.json`**:
-    在 `scripts` 对象中添加一个 `debug` 脚本：
-    ```json
-    "scripts": {
-      "start": "node dist/cli.js",
-      "dev": "ts-node src/cli.ts",
-      "build": "tsc",
-      "debug": "node --inspect-brk -r ts-node/register src/cli.ts"
-    },
-    ```
+#### 1. 添加调试脚本
 
-2.  **配置 VS Code (`.vscode/launch.json`)**:
-    创建或修改 `.vscode/launch.json` 文件：
-    ```json
+**修改 `package.json`**:
+```json
+{
+  "scripts": {
+    "start": "node dist/cli.js",
+    "dev": "ts-node src/cli.ts", 
+    "build": "esbuild src/cli.ts --bundle --platform=node --outfile=dist/cli.js",
+    "debug": "node --inspect-brk -r ts-node/register src/cli.ts"
+  }
+}
+```
+
+#### 2. 配置 VS Code 调试
+
+**创建 `.vscode/launch.json`**:
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
     {
-      "version": "0.2.0",
-      "configurations": [
-        {
-          "type": "node",
-          "request": "launch",
-          "name": "Debug Claude Code Router",
-          "runtimeExecutable": "pnpm", // 或 npm/yarn
-          "runtimeArgs": [
-            "run",
-            "debug",
-            "--",
-            "start" // 调试 start 命令
-          ],
-          "console": "integratedTerminal",
-          "internalConsoleOptions": "neverOpen",
-          "port": 9229
-        }
-      ]
+      "type": "node",
+      "request": "launch",
+      "name": "Debug CCB Start",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "debug", "--", "start"],
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "port": 9229,
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "node", 
+      "request": "launch",
+      "name": "Debug CCB Code Command",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "debug", "--", "code", "test prompt"],
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "port": 9229,
+      "cwd": "${workspaceFolder}"
     }
-    ```
+  ]
+}
+```
 
-3.  **开始调试**:
-    - 在您的代码中（如 `src/middlewares/router.ts`）设置断点。
-    - 切换到 VS Code 的"运行和调试"侧边栏。
-    - 从下拉菜单中选择 "Debug Claude Code Router"，然后按 `F5` 启动。
+### 调试技巧
 
-程序将在您的断点处暂停，您可以检查变量、单步执行，深入了解代码的每一个细节。 
+#### 1. 中间件调试
+
+在关键中间件中设置断点：
+- `src/middlewares/router.ts:15` - 路由决策点
+- `src/middlewares/formatRequest.ts:20` - 请求格式化点
+- `src/utils/config.ts:45` - 配置加载点
+
+#### 2. 日志调试
+
+启用详细日志：
+```json
+{
+  "logEnabled": true
+}
+```
+
+日志文件位置: `<workspace>/.ccb/service.log`
+
+#### 3. 网络调试
+
+监控 HTTP 请求：
+```bash
+# 查看服务状态
+ccb status
+
+# 测试健康检查
+curl http://localhost:<port>/health
+
+# 监控网络流量
+netstat -an | grep <port>
+```
+
+### 常见调试场景
+
+#### 1. 配置不生效
+- 检查配置文件优先级
+- 验证 JSON 格式正确性
+- 确认环境变量设置
+
+#### 2. 路由异常
+- 在 `router.ts` 中添加日志输出
+- 检查 token 计算逻辑
+- 验证 provider 配置
+
+#### 3. 端口冲突
+- 检查随机端口分配逻辑
+- 查看系统端口占用情况
+- 调整端口范围配置
+
+---
+
+## 性能优化指南
+
+### 配置优化
+
+1. **合理配置超时时间**:
+```json
+{
+  "timeout": 30000,
+  "maxRetries": 3
+}
+```
+
+2. **选择合适的模型组合**:
+- `background`: 轻量级本地模型
+- `think`: 强推理模型
+- `longContext`: 长上下文专用模型
+
+3. **启用缓存机制**:
+```typescript
+const providerCache = new LRUCache<string, OpenAI>({
+  max: 10,
+  ttl: 2 * 60 * 60 * 1000, // 2小时
+});
+```
+
+### 监控和分析
+
+1. **启用日志监控**:
+```bash
+tail -f <workspace>/.ccb/service.log
+```
+
+2. **性能指标收集**:
+- 请求响应时间
+- 模型切换频率
+- 错误率统计
+
+3. **资源使用监控**:
+```bash
+# 查看进程资源使用
+ps aux | grep node
+
+# 监控端口使用
+lsof -i :<port>
+```
+
+---
+
+## 故障排除
+
+### 常见问题解决
+
+#### 1. 服务启动失败
+```bash
+# 检查服务状态
+ccb status
+
+# 查看详细错误日志
+cat <workspace>/.ccb/service.log
+
+# 手动清理服务状态
+rm <workspace>/.ccb/service.json
+```
+
+#### 2. 配置不生效
+```bash
+# 验证配置文件语法
+cat <workspace>/.ccb/config.json | jq .
+
+# 检查环境变量
+env | grep OPENAI
+```
+
+#### 3. 网络连接问题
+```bash
+# 测试 API 连接
+curl -H "Authorization: Bearer $OPENAI_API_KEY" \
+     $OPENAI_BASE_URL/models
+
+# 检查代理设置
+echo $HTTP_PROXY $HTTPS_PROXY
+```
+
+### 错误代码参考
+
+| 错误类型 | 原因 | 解决方案 |
+|----------|------|----------|
+| `EADDRINUSE` | 端口被占用 | 自动重新分配端口 |
+| `ENOENT` | 配置文件不存在 | 使用默认配置 |
+| `SyntaxError` | JSON 格式错误 | 检查配置文件语法 |
+| `ECONNREFUSED` | API 连接失败 | 检查网络和 API 配置 |
+
+---
+
+## 最佳实践
+
+### 项目组织
+
+1. **全局配置**: 设置通用的 API 密钥和默认模型
+2. **工作区配置**: 为特定项目定制 provider 组合
+3. **环境变量**: 管理敏感信息和临时覆盖
+
+### 安全考虑
+
+1. **API 密钥管理**:
+   - 使用环境变量存储敏感信息
+   - 避免在配置文件中硬编码密钥
+   - 定期轮换 API 密钥
+
+2. **网络安全**:
+   - 使用 HTTPS 端点
+   - 配置适当的代理设置
+   - 监控异常网络活动
+
+### 成本控制
+
+1. **模型选择策略**:
+   - 后台任务使用免费/低成本模型
+   - 复杂任务选择性使用高端模型
+   - 长上下文场景使用专门优化的模型
+
+2. **使用监控**:
+   - 跟踪不同模型的使用频率
+   - 分析成本效益比
+   - 优化路由规则
+
+### 团队协作
+
+1. **配置模板**:
+   - 提供标准化的配置模板
+   - 文档化最佳实践
+   - 版本控制配置文件
+
+2. **环境一致性**:
+   - 统一开发环境配置
+   - 使用环境变量管理差异
+   - 自动化部署配置
+
+通过本深度指南，您应该能够完全掌握 Claude Code Bridge 的各个方面，从基础使用到高级定制开发。如果您有任何问题或需要进一步的技术支持，请参考项目的 GitHub 仓库或联系维护团队。 

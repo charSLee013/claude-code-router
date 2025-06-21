@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from 'fs';
-import { PID_FILE, REFERENCE_COUNT_FILE } from '../constants';
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
+import { REFERENCE_COUNT_FILE, getWorkspacePaths } from '../constants';
 
 export function incrementReferenceCount() {
     let count = 0;
@@ -26,60 +26,114 @@ export function getReferenceCount(): number {
     return parseInt(readFileSync(REFERENCE_COUNT_FILE, 'utf-8')) || 0;
 }
 
-export function isServiceRunning(): boolean {
-    if (!existsSync(PID_FILE)) {
+export interface ServiceState {
+    pid: number;
+    port: number;
+    startTime: number;
+    cwd: string;
+}
+
+export function isServiceRunning(cwd: string): boolean {
+    const workspacePaths = getWorkspacePaths(cwd);
+    
+    if (!existsSync(workspacePaths.stateFile)) {
         return false;
     }
 
     try {
-        const pid = parseInt(readFileSync(PID_FILE, 'utf-8'));
-        process.kill(pid, 0);
+        const state = getServiceState(cwd);
+        if (!state) {
+            return false;
+        }
+        
+        process.kill(state.pid, 0);
         return true;
     } catch (e) {
-        // Process not running, clean up pid file
-        cleanupPidFile();
+        cleanupServiceState(cwd);
         return false;
     }
 }
 
-export function savePid(pid: number) {
-    writeFileSync(PID_FILE, pid.toString());
+export function getServiceState(cwd: string): ServiceState | null {
+    const workspacePaths = getWorkspacePaths(cwd);
+    
+    if (!existsSync(workspacePaths.stateFile)) {
+        return null;
+    }
+    
+    try {
+        const content = readFileSync(workspacePaths.stateFile, 'utf-8');
+        const state = JSON.parse(content) as ServiceState;
+        
+        if (typeof state.pid === 'number' && typeof state.port === 'number') {
+            return state;
+        }
+        
+        return null;
+    } catch (e) {
+        console.warn(`警告：读取服务状态文件失败: ${workspacePaths.stateFile}`, e);
+        return null;
+    }
 }
 
-export function cleanupPidFile() {
-    if (existsSync(PID_FILE)) {
+export function saveServiceState(cwd: string, pid: number, port: number): void {
+    const workspacePaths = getWorkspacePaths(cwd);
+    
+    const state: ServiceState = {
+        pid,
+        port,
+        startTime: Date.now(),
+        cwd
+    };
+    
+    try {
+        writeFileSync(workspacePaths.stateFile, JSON.stringify(state, null, 2));
+    } catch (e) {
+        console.error(`错误：无法保存服务状态到 ${workspacePaths.stateFile}`, e);
+    }
+}
+
+export function cleanupServiceState(cwd: string): void {
+    const workspacePaths = getWorkspacePaths(cwd);
+    
+    if (existsSync(workspacePaths.stateFile)) {
         try {
-            const fs = require('fs');
-            fs.unlinkSync(PID_FILE);
+            unlinkSync(workspacePaths.stateFile);
         } catch (e) {
-            // Ignore cleanup errors
+            console.warn(`警告：清理服务状态文件失败: ${workspacePaths.stateFile}`, e);
         }
     }
 }
 
-export function getServicePid(): number | null {
-    if (!existsSync(PID_FILE)) {
-        return null;
-    }
-    
-    try {
-        const pid = parseInt(readFileSync(PID_FILE, 'utf-8'));
-        return isNaN(pid) ? null : pid;
-    } catch (e) {
-        return null;
-    }
+export function getServicePid(cwd: string): number | null {
+    const state = getServiceState(cwd);
+    return state ? state.pid : null;
 }
 
-export function getServiceInfo() {
-    const pid = getServicePid();
-    const running = isServiceRunning();
+export function getServiceInfo(cwd: string) {
+    const state = getServiceState(cwd);
+    const running = isServiceRunning(cwd);
+    const workspacePaths = getWorkspacePaths(cwd);
     
     return {
         running,
-        pid,
-        port: 3456,
-        endpoint: 'http://127.0.0.1:3456',
-        pidFile: PID_FILE,
+        pid: state?.pid || null,
+        port: state?.port || null,
+        endpoint: state ? `http://127.0.0.1:${state.port}` : null,
+        stateFile: workspacePaths.stateFile,
+        startTime: state?.startTime || null,
+        cwd: state?.cwd || cwd,
         referenceCount: getReferenceCount()
     };
+}
+
+export function savePid(pid: number) {
+    console.warn('savePid() 已弃用，请使用 saveServiceState(cwd, pid, port)');
+}
+
+/**
+ * @deprecated 使用 cleanupServiceState(cwd) 代替
+ */
+export function cleanupPidFile() {
+    console.warn('cleanupPidFile() 已弃用，请使用 cleanupServiceState(cwd)');
 }

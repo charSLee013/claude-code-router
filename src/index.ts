@@ -1,6 +1,6 @@
 import { existsSync } from "fs";
 import { writeFile } from "fs/promises";
-import { getOpenAICommonOptions, initConfig, initDir } from "./utils";
+import { getOpenAICommonOptions } from "./utils";
 import { createServer } from "./server";
 import { formatRequest } from "./middlewares/formatRequest";
 import { rewriteBody } from "./middlewares/rewriteBody";
@@ -8,12 +8,14 @@ import { router } from "./middlewares/router";
 import OpenAI from "openai";
 import { streamOpenAIResponse } from "./utils/stream";
 import {
-  cleanupPidFile,
+  cleanupServiceState,
   isServiceRunning,
-  savePid,
+  saveServiceState,
 } from "./utils/processCheck";
 import { LRUCache } from "lru-cache";
 import { log } from "./utils/log";
+import { loadConfig, ensureWorkspaceDir } from "./utils/config";
+import { findAvailablePort, findRandomAvailablePort } from "./utils/port";
 
 // TypeScript interface extensions for custom Request properties
 declare global {
@@ -45,6 +47,11 @@ async function initializeClaudeConfig() {
   }
 }
 
+async function initDir() {
+  // This function is kept for compatibility but may be empty
+  // Workspace-specific directory initialization is handled by ensureWorkspaceDir
+}
+
 interface RunOptions {
   port?: number;
 }
@@ -56,16 +63,21 @@ interface ModelProvider {
   model: string;
 }
 
-async function run(options: RunOptions = {}) {
-  // Check if service is already running
-  if (isServiceRunning()) {
-    console.log("✅ Service is already running in the background.");
+async function run(cwd: string, options: RunOptions = {}) {
+  // Check if service is already running for this workspace
+  if (isServiceRunning(cwd)) {
+    console.log("✅ Service is already running in the background for this workspace.");
     return;
   }
 
+  // Ensure workspace directory structure exists
+  ensureWorkspaceDir(cwd);
+
   await initializeClaudeConfig();
   await initDir();
-  const config = await initConfig();
+  
+  // Load configuration using the new three-tier system
+  const config = loadConfig(cwd);
 
   const Providers = new Map<string, ModelProvider>();
   const providerCache = new LRUCache<string, OpenAI>({
@@ -112,30 +124,32 @@ async function run(options: RunOptions = {}) {
     const defaultProvider = Providers.values().next().value!;
     Providers.set("default", defaultProvider);
   }
-  const port = options.port || 3456;
 
-  // Save the PID of the background process
-  savePid(process.pid);
+  // Use dynamic port allocation
+  const basePort = options.port || config.basePort || 3456;
+  const allocatedPort = await findRandomAvailablePort(basePort, 65535);
 
-  // Handle SIGINT (Ctrl+C) to clean up PID file
+  // Save the service state (PID and port) for this workspace
+  saveServiceState(cwd, process.pid, allocatedPort);
+
+  // Handle SIGINT (Ctrl+C) to clean up workspace state
   process.on("SIGINT", () => {
-    console.log("Received SIGINT, cleaning up...");
-    cleanupPidFile();
+    console.log("Received SIGINT, cleaning up workspace state...");
+    cleanupServiceState(cwd);
     process.exit(0);
   });
 
-  // Handle SIGTERM to clean up PID file
+  // Handle SIGTERM to clean up workspace state
   process.on("SIGTERM", () => {
-    cleanupPidFile();
+    cleanupServiceState(cwd);
     process.exit(0);
   });
 
-  // Use port from environment variable if set (for background process)
-  const servicePort = process.env.SERVICE_PORT
-    ? parseInt(process.env.SERVICE_PORT)
-    : port;
-
-  const server = await createServer(servicePort);
+  const server = await createServer({
+    port: allocatedPort,
+    cwd: cwd,
+    config: config
+  });
   server.useMiddleware((req, res, next) => {
     console.log("Middleware triggered for request:", req.body.model);
     req.config = config;
@@ -167,8 +181,7 @@ async function run(options: RunOptions = {}) {
     }
   });
   server.start();
-  console.log(`🚀 Claude Code Router is running on port ${servicePort}`);
+  console.log(`🚀 Claude Code Router is running on port ${allocatedPort} for workspace: ${cwd}`);
 }
 
 export { run };
-// run();

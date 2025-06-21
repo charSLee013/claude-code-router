@@ -3,7 +3,7 @@ import OpenAI, { ClientOptions } from "openai";
 import fs from "node:fs/promises";
 import readline from "node:readline";
 import {
-  CONFIG_FILE,
+  GLOBAL_CONFIG_FILE,
   DEFAULT_CONFIG,
   HOME_DIR,
   PLUGINS_DIR,
@@ -56,7 +56,7 @@ const confirm = async (query: string): Promise<boolean> => {
 
 export const readConfigFile = async () => {
   try {
-    const config = await fs.readFile(CONFIG_FILE, "utf-8");
+    const config = await fs.readFile(GLOBAL_CONFIG_FILE, "utf-8");
     return JSON.parse(config);
   } catch {
     const apiKey = await question("Enter OPENAI_API_KEY: ");
@@ -74,7 +74,7 @@ export const readConfigFile = async () => {
 
 export const writeConfigFile = async (config: any) => {
   await ensureDir(HOME_DIR);
-  await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2));
+  await fs.writeFile(GLOBAL_CONFIG_FILE, JSON.stringify(config, null, 2));
 };
 
 export const initConfig = async () => {
