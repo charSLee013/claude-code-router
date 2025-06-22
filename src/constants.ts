@@ -1,10 +1,10 @@
 import path from "node:path";
 import os from "node:os";
 
-export const HOME_DIR = path.join(os.homedir(), ".ccb");
+export const HOME_DIR = path.join(os.homedir(), ".claude");
 
 // 全局配置文件路径
-export const GLOBAL_CONFIG_FILE = `${HOME_DIR}/config.json`;
+export const GLOBAL_CONFIG_FILE = `${HOME_DIR}/ccb-config.json`;
 
 export const PLUGINS_DIR = `${HOME_DIR}/plugins`;
 
@@ -19,12 +19,12 @@ export const REFERENCE_COUNT_FILE = '/tmp/claude-code-reference-count.txt';
  * @returns 包含所有工作区特定路径的对象
  */
 export function getWorkspacePaths(cwd: string) {
-  const ccbDir = path.join(cwd, '.ccb');
+  const ccbDir = path.join(cwd, '.claude');
   return {
     ccbDir,
-    configFile: path.join(ccbDir, 'config.json'),
-    logFile: path.join(ccbDir, 'service.log'),
-    stateFile: path.join(ccbDir, 'service.json'), // 存储PID和端口信息
+    configFile: path.join(ccbDir, 'ccb-config.json'),
+    logFile: path.join(ccbDir, 'ccb-service.log'),
+    stateFile: path.join(ccbDir, 'ccb-service.json'), // 存储PID和端口信息
     logsDir: path.join(ccbDir, 'logs')
   };
 }

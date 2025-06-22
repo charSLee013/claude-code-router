@@ -56,27 +56,27 @@ function addGitignoreEntry(gitignorePath: string, entry: string): void {
 }
 
 /**
- * 更新工作区的.gitignore文件，添加.ccb目录
+ * 更新工作区的.gitignore文件，添加.claude目录
  * @param cwd 当前工作目录
  */
 export function updateGitignore(cwd: string): void {
   const gitignorePath = path.join(cwd, '.gitignore');
-  const ccbEntry = '.ccb/';
+  const claudeEntry = '.claude/';
   
   // 检查.gitignore文件是否存在
   if (!fs.existsSync(gitignorePath)) {
-    console.log('未找到 .gitignore 文件，跳过添加 .ccb/ 条目');
+    console.log('未找到 .gitignore 文件，跳过添加 .claude/ 条目');
     return;
   }
   
-  // 检查是否已包含.ccb条目
-  if (hasGitignoreEntry(gitignorePath, ccbEntry)) {
-    console.log('✅ .gitignore 文件中已包含 .ccb/ 条目');
+  // 检查是否已包含.claude条目
+  if (hasGitignoreEntry(gitignorePath, claudeEntry)) {
+    console.log('✅ .gitignore 文件中已包含 .claude/ 条目');
     return;
   }
   
-  // 添加.ccb条目
-  addGitignoreEntry(gitignorePath, ccbEntry);
+  // 添加.claude条目
+  addGitignoreEntry(gitignorePath, claudeEntry);
 }
 
 /**
@@ -125,11 +125,11 @@ Thumbs.db
 .idea/
 
 # CCB workspace data
-.ccb/
+.claude/
 `;
   } else {
     content = `# CCB workspace data
-.ccb/
+.claude/
 `;
   }
   
@@ -153,7 +153,7 @@ export function isGitRepository(cwd: string): boolean {
 
 /**
  * 智能更新.gitignore文件
- * 如果是Git仓库且存在.gitignore文件，则添加.ccb/条目
+ * 如果是Git仓库且存在.gitignore文件，则添加.claude/条目
  * @param cwd 当前工作目录
  */
 export function smartUpdateGitignore(cwd: string): void {

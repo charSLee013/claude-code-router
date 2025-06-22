@@ -371,7 +371,7 @@ export function removeConfigKeys(cwd: string, keys: string[], level: ConfigLevel
 export function ensureWorkspaceDir(cwd: string): void {
   const workspacePaths = getWorkspacePaths(cwd);
   
-  // 确保 .ccb 目录存在
+  // 确保 .claude 目录存在
   if (!fs.existsSync(workspacePaths.ccbDir)) {
     fs.mkdirSync(workspacePaths.ccbDir, { recursive: true });
   }

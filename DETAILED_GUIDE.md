@@ -33,8 +33,8 @@ CCB 实现了灵活的三层配置系统，提供强大的配置管理能力。
 ### 配置优先级
 
 1. **环境变量** (最高优先级)
-2. **工作区配置**: `<project-dir>/.ccb/config.json`
-3. **全局配置**: `~/.ccb/config.json` (最低优先级)
+2. **工作区配置**: `<project-dir>/.claude/config.json`
+3. **全局配置**: `~/.claude/config.json` (最低优先级)
 
 ### 配置加载机制
 
@@ -67,11 +67,11 @@ export function loadConfig(cwd: string): any {
 
 ```
 your-project/
-├── .ccb/
+├── .claude/
 │   ├── config.json      # 工作区配置文件
 │   ├── service.log      # 服务日志文件
 │   └── service.json     # 服务状态文件
-├── .gitignore           # 自动更新以忽略 .ccb/ 目录
+├── .gitignore           # 自动更新以忽略 .claude/ 目录
 └── your-source-files/
 ```
 
@@ -453,7 +453,7 @@ if (req.provider === 'my-custom-provider') {
 }
 ```
 
-日志文件位置: `<workspace>/.ccb/service.log`
+日志文件位置: `<workspace>/.claude/service.log`
 
 #### 3. 网络调试
 
@@ -517,7 +517,7 @@ const providerCache = new LRUCache<string, OpenAI>({
 
 1. **启用日志监控**:
 ```bash
-tail -f <workspace>/.ccb/service.log
+tail -f <workspace>/.claude/service.log
 ```
 
 2. **性能指标收集**:
@@ -546,16 +546,16 @@ lsof -i :<port>
 ccb status
 
 # 查看详细错误日志
-cat <workspace>/.ccb/service.log
+cat <workspace>/.claude/service.log
 
 # 手动清理服务状态
-rm <workspace>/.ccb/service.json
+rm <workspace>/.claude/service.json
 ```
 
 #### 2. 配置不生效
 ```bash
 # 验证配置文件语法
-cat <workspace>/.ccb/config.json | jq .
+cat <workspace>/.claude/config.json | jq .
 
 # 检查环境变量
 env | grep OPENAI
