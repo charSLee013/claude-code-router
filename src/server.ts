@@ -2,6 +2,16 @@ import express, { RequestHandler } from "express";
 import { log } from "./utils/log";
 import { Config } from "./utils/config";
 
+// 扩展 Express 的 Request 类型
+declare global {
+  namespace Express {
+    interface Request {
+      cwd?: string;
+      config?: Config;
+    }
+  }
+}
+
 interface Server {
   app: express.Application;
   useMiddleware: (middleware: RequestHandler) => void;
@@ -21,6 +31,13 @@ export const createServer = async (options: ServerOptions): Promise<Server> => {
   
   // 配置JSON解析中间件
   app.use(express.json({ limit: "500mb" }));
+  
+  // 注入cwd和config到请求对象
+  app.use((req, res, next) => {
+    req.cwd = cwd;
+    req.config = config;
+    next();
+  });
   
   // 请求日志中间件
   app.use((req, res, next) => {

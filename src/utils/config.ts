@@ -152,6 +152,87 @@ function validateConfig(config: Record<string, any>): { valid: boolean; errors: 
 }
 
 /**
+ * 验证思考模式相关配置的一致性
+ * @param config 要验证的配置对象
+ * @returns 验证结果和警告/错误信息
+ */
+export function validateThinkingModeConfig(config: Config): { 
+  valid: boolean; 
+  errors: string[]; 
+  warnings: string[] 
+} {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  
+  // 检查 Router 配置
+  if (config.Router) {
+    const { think, background, longContext } = config.Router;
+    
+    // 验证 think 路由配置
+    if (think && config.providers) {
+      const thinkProvider = config.providers.find(p => p.id === think);
+      if (!thinkProvider) {
+        errors.push(`Router.think 配置的 provider "${think}" 不存在于 providers 列表中`);
+      } else {
+        // 检查思考模式相关配置
+        const hasEnableThinking = thinkProvider.extra_body?.enable_thinking === true;
+        const hasForceStream = thinkProvider.force_stream_for_thinking === true;
+        
+        if (hasEnableThinking && !hasForceStream) {
+          warnings.push(`Provider "${think}" 设置了 enable_thinking=true 但未设置 force_stream_for_thinking=true，可能导致API错误`);
+          warnings.push(`建议在 provider "${think}" 中添加 "force_stream_for_thinking": true`);
+        }
+        
+        if (!hasEnableThinking && hasForceStream) {
+          warnings.push(`Provider "${think}" 设置了 force_stream_for_thinking=true 但未设置 enable_thinking=true，force_stream_for_thinking 可能不会生效`);
+        }
+        
+        if (hasEnableThinking && hasForceStream) {
+          console.log(`✅ Provider "${think}" 的思考模式配置正确`);
+        }
+      }
+    }
+    
+    // 验证其他路由配置
+    if (background && config.providers && !config.providers.find(p => p.id === background)) {
+      errors.push(`Router.background 配置的 provider "${background}" 不存在于 providers 列表中`);
+    }
+    
+    if (longContext && config.providers && !config.providers.find(p => p.id === longContext)) {
+      errors.push(`Router.longContext 配置的 provider "${longContext}" 不存在于 providers 列表中`);
+    }
+  }
+  
+  // 检查 providers 中的思考模式配置
+  if (config.providers) {
+    config.providers.forEach(provider => {
+      const hasEnableThinking = provider.extra_body?.enable_thinking === true;
+      const hasForceStream = provider.force_stream_for_thinking === true;
+      
+      if (hasEnableThinking && !hasForceStream) {
+        warnings.push(`Provider "${provider.id}" 设置了 enable_thinking=true 但未设置 force_stream_for_thinking=true`);
+      }
+      
+      // 检查 thinking_budget 参数
+      if (provider.extra_body?.thinking_budget !== undefined) {
+        const budget = provider.extra_body.thinking_budget;
+        if (typeof budget !== 'number' || budget <= 0) {
+          errors.push(`Provider "${provider.id}" 的 thinking_budget 必须是正数`);
+        } else if (budget > 8192) {
+          warnings.push(`Provider "${provider.id}" 的 thinking_budget (${budget}) 较大，可能导致响应时间过长`);
+        }
+      }
+    });
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings
+  };
+}
+
+/**
  * 加载和合并配置
  * 按顺序加载：默认配置 -> 全局配置 -> 工作区配置
  * @param cwd 当前工作目录

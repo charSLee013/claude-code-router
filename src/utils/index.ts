@@ -9,13 +9,21 @@ import {
   PLUGINS_DIR,
 } from "../constants";
 
-export function getOpenAICommonOptions(): ClientOptions {
+export function getOpenAICommonOptions(config?: { timeout?: number }): ClientOptions {
   const options: ClientOptions = {};
+  
+  // 设置代理
   if (process.env.PROXY_URL) {
     options.httpAgent = new HttpsProxyAgent(process.env.PROXY_URL);
   } else if (process.env.HTTPS_PROXY) {
     options.httpAgent = new HttpsProxyAgent(process.env.HTTPS_PROXY);
   }
+  
+  // 设置超时时间
+  if (config?.timeout) {
+    options.timeout = config.timeout;
+  }
+  
   return options;
 }
 
@@ -83,10 +91,10 @@ export const initConfig = async () => {
   return config;
 };
 
-export const createClient = (options: ClientOptions) => {
+export const createClient = (options: ClientOptions, config?: { timeout?: number }) => {
   const client = new OpenAI({
     ...options,
-    ...getOpenAICommonOptions(),
+    ...getOpenAICommonOptions(config),
   });
   return client;
 };

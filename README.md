@@ -23,8 +23,11 @@ npm install -g @anthropic-ai/claude-code
 ### 2. 安装 Claude Code Bridge
 
 ```shell
+# 安装 Claude Code Bridge (CCB)
 npm install -g @musistudio/claude-code-router
 ```
+
+> 注意：包名称保持为 `claude-code-router`，但项目已重命名为 Claude Code Bridge (CCB)，命令行工具为 `ccb`。
 
 ### 3. 启动服务
 

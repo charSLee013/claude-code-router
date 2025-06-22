@@ -2,13 +2,14 @@ import { Request, Response, NextFunction } from "express";
 import { MessageCreateParamsBase } from "@anthropic-ai/sdk/resources/messages";
 import OpenAI from "openai";
 import { streamOpenAIResponse } from "../utils/stream";
-import { log } from "../utils/log";
+import { logWithConfig } from "../utils/log";
 
 // 扩展 Express 的 Request 类型，添加 _simulate_non_stream 属性
 declare global {
   namespace Express {
     interface Request {
       _simulate_non_stream?: boolean;
+      cwd?: string;
     }
   }
 }
@@ -18,6 +19,13 @@ export const formatRequest = async (
   res: Response,
   next: NextFunction
 ) => {
+  // 创建便捷的日志函数
+  const log = (...args: any[]) => {
+    if (req.cwd && req.config) {
+      logWithConfig(req.cwd, req.config, ...args);
+    }
+  };
+
   let {
     model,
     max_tokens,
@@ -204,18 +212,43 @@ export const formatRequest = async (
 
     // 如果是思考请求且需要强制流式传输
     const isThinkRequest = req.provider === req.config.Router?.think;
-    if (isThinkRequest && currentProvider?.force_stream_for_thinking && !data.stream) {
+    const hasThinkingField = req.body.thinking === true;
+    const hasThinkingInExtraBody = mergedExtraBody.enable_thinking === true;
+    
+    log(`[思考模式检测] req.provider="${req.provider}", config.Router.think="${req.config.Router?.think}", isThinkRequest=${isThinkRequest}`);
+    log(`[思考模式检测] hasThinkingField=${hasThinkingField}, hasThinkingInExtraBody=${hasThinkingInExtraBody}`);
+    log(`[配置检查] currentProvider存在=${!!currentProvider}, force_stream_for_thinking=${currentProvider?.force_stream_for_thinking}, 原始stream=${data.stream}`);
+    
+    // 综合判断是否为思考请求（需要满足路由条件或明确的thinking标志）
+    const shouldForceStream = (isThinkRequest || hasThinkingField) && 
+                              currentProvider?.force_stream_for_thinking && 
+                              !data.stream;
+    
+    if (shouldForceStream) {
       // 记录原始的非流式请求状态
       req._simulate_non_stream = true;
       // 强制开启流式
       data.stream = true;
-      log(`强制开启流式传输用于思考请求: ${req.provider}`);
+      log(`[强制流式转换] 已将非流式请求转换为流式处理，provider: ${req.provider}`);
+      log(`[强制流式转换] _simulate_non_stream标志已设置为true，将在响应时聚合返回`);
+    } else if ((isThinkRequest || hasThinkingField || hasThinkingInExtraBody) && !currentProvider?.force_stream_for_thinking) {
+      log(`[思考模式警告] 检测到思考请求但未配置force_stream_for_thinking，可能导致API错误`);
+      log(`[思考模式警告] 建议在provider配置中添加 "force_stream_for_thinking": true`);
+    } else if (!isThinkRequest && !hasThinkingField && data.stream === false) {
+      log(`[常规请求] 非思考请求，保持原始流式设置: ${data.stream}`);
     }
     
     req.body = data;
     console.log(JSON.stringify(data.messages, null, 2));
   } catch (error) {
     console.error("Error in request processing:", error);
+    
+    // 检查是否是超时错误
+    let errorMessage = (error as Error).message;
+    if (errorMessage.includes('timeout') || errorMessage.includes('timed out')) {
+      errorMessage = `API 请求超时 (${req.config?.timeout || 30000}ms)，请检查网络连接或增加超时设置`;
+    }
+    
     const errorCompletion: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk> =
       {
         async *[Symbol.asyncIterator]() {
@@ -228,7 +261,7 @@ export const formatRequest = async (
               {
                 index: 0,
                 delta: {
-                  content: `Error: ${(error as Error).message}`,
+                  content: `Error: ${errorMessage}`,
                 },
                 finish_reason: "stop",
               },

@@ -14,14 +14,14 @@ import {
 } from "./utils/processCheck";
 import { LRUCache } from "lru-cache";
 import { log } from "./utils/log";
-import { loadConfig, ensureWorkspaceDir } from "./utils/config";
+import { loadConfig, ensureWorkspaceDir, validateThinkingModeConfig, Config } from "./utils/config";
 import { findAvailablePort, findRandomAvailablePort } from "./utils/port";
 
 // TypeScript interface extensions for custom Request properties
 declare global {
   namespace Express {
     interface Request {
-      config?: any;
+      config?: Config;
       provider?: string;
     }
   }
@@ -79,6 +79,27 @@ async function run(cwd: string, options: RunOptions = {}) {
   // Load configuration using the new three-tier system
   const config = loadConfig(cwd);
 
+  // 验证思考模式配置
+  console.log("🔍 验证思考模式配置...");
+  const validation = validateThinkingModeConfig(config);
+  
+  if (validation.errors.length > 0) {
+    console.error("❌ 配置错误:");
+    validation.errors.forEach(error => console.error(`   - ${error}`));
+    console.error("请修复配置错误后重新启动服务");
+    return;
+  }
+  
+  if (validation.warnings.length > 0) {
+    console.warn("⚠️  配置警告:");
+    validation.warnings.forEach(warning => console.warn(`   - ${warning}`));
+    console.warn("服务将继续启动，但建议修复上述配置问题");
+  }
+  
+  if (validation.errors.length === 0 && validation.warnings.length === 0) {
+    console.log("✅ 配置验证通过");
+  }
+
   const Providers = new Map<string, ModelProvider>();
   const providerCache = new LRUCache<string, OpenAI>({
     max: 10,
@@ -95,7 +116,7 @@ async function run(cwd: string, options: RunOptions = {}) {
       openai = new OpenAI({
         baseURL: provider.api_base_url,
         apiKey: provider.api_key,
-        ...getOpenAICommonOptions(),
+        ...getOpenAICommonOptions(config),
       });
       providerCache.set(provider.id, openai);
     }

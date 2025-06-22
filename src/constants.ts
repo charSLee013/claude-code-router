@@ -1,7 +1,7 @@
 import path from "node:path";
 import os from "node:os";
 
-export const HOME_DIR = path.join(os.homedir(), ".claude-code-router");
+export const HOME_DIR = path.join(os.homedir(), ".ccb");
 
 // 全局配置文件路径
 export const GLOBAL_CONFIG_FILE = `${HOME_DIR}/config.json`;

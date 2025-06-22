@@ -57,14 +57,21 @@ export function log(cwd: string, ...args: any[]) {
  * @param args 要记录的参数
  */
 export function logWithConfig(cwd: string, config: any, ...args: any[]) {
+  // 调试信息
+  console.log(`[DEBUG] logWithConfig called - config.log: ${config?.log}, process.env.LOG: ${process.env.LOG}`);
+  
   // Check if logging is enabled via config or environment variable
-  const isLogEnabled = config.log === true || process.env.LOG === "true";
+  const isLogEnabled = config?.log === true || config?.logEnabled === true || process.env.LOG === "true";
+
+  console.log(`[DEBUG] isLogEnabled: ${isLogEnabled}`);
 
   if (!isLogEnabled) {
     return;
   }
 
   const workspacePaths = getWorkspacePaths(cwd);
+  
+  console.log(`[DEBUG] Log file path: ${workspacePaths.logFile}`);
   
   // Ensure log directory exists
   ensureLogDir(workspacePaths.logFile);
@@ -83,6 +90,7 @@ export function logWithConfig(cwd: string, config: any, ...args: any[]) {
   // Append to workspace-specific log file
   try {
     fs.appendFileSync(workspacePaths.logFile, logMessage, "utf8");
+    console.log(`[DEBUG] Successfully wrote to log file: ${workspacePaths.logFile}`);
   } catch (error) {
     console.warn(`警告：无法写入日志文件 ${workspacePaths.logFile}:`, error);
   }
