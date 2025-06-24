@@ -198,7 +198,13 @@ export const formatRequest = async (
     res.setHeader("Connection", "keep-alive");
     
     // 获取当前 provider 的配置
-    const currentProvider = req.config.providers?.find((p: { id: string }) => p.id === req.provider);
+    const currentProvider = req.config?.providers?.find((p: { id: string }) => p.id === req.provider);
+
+    // 确定真实的模型名称
+    const realModelName = currentProvider?.model || model;
+
+    // 更新 data 对象中的模型名称为真实模型名称
+    data.model = realModelName;
 
     // 合并请求中的 extra_body 和 provider 配置中的 extra_body
     const initialExtraBody = req.body.extra_body || {};
@@ -211,11 +217,11 @@ export const formatRequest = async (
     }
 
     // 如果是思考请求且需要强制流式传输
-    const isThinkRequest = req.provider === req.config.Router?.think;
+    const isThinkRequest = req.provider === req.config?.Router?.think;
     const hasThinkingField = req.body.thinking === true;
     const hasThinkingInExtraBody = mergedExtraBody.enable_thinking === true;
     
-    log(`[思考模式检测] req.provider="${req.provider}", config.Router.think="${req.config.Router?.think}", isThinkRequest=${isThinkRequest}`);
+    log(`[思考模式检测] req.provider="${req.provider}", config.Router.think="${req.config?.Router?.think}", isThinkRequest=${isThinkRequest}`);
     log(`[思考模式检测] hasThinkingField=${hasThinkingField}, hasThinkingInExtraBody=${hasThinkingInExtraBody}`);
     log(`[配置检查] currentProvider存在=${!!currentProvider}, force_stream_for_thinking=${currentProvider?.force_stream_for_thinking}, 原始stream=${data.stream}`);
     
@@ -249,13 +255,17 @@ export const formatRequest = async (
       errorMessage = `API 请求超时 (${req.config?.timeout || 30000}ms)，请检查网络连接或增加超时设置`;
     }
     
+    // 确定真实的模型名称用于错误处理
+    const currentProvider = req.config?.providers?.find((p: { id: string }) => p.id === req.provider);
+    const realModelName = currentProvider?.model || model;
+    
     const errorCompletion: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk> =
       {
         async *[Symbol.asyncIterator]() {
           yield {
             id: `error_${Date.now()}`,
             created: Math.floor(Date.now() / 1000),
-            model,
+            model: realModelName,
             object: "chat.completion.chunk",
             choices: [
               {
@@ -269,7 +279,7 @@ export const formatRequest = async (
           };
         },
       };
-    await streamOpenAIResponse(res, errorCompletion, model, req.body, req);
+    await streamOpenAIResponse(res, errorCompletion, realModelName, req.body, req);
   }
   next();
 };

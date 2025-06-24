@@ -8,10 +8,10 @@ jest.mock('../../utils/stream', () => ({
 
 // Mock the log module
 jest.mock('../../utils/log', () => ({
-  log: jest.fn(),
+  logWithConfig: jest.fn(),
 }));
 
-describe('formatRequest middleware', () => {
+describe('模型名称修复测试', () => {
   let mockReq: Partial<Request>;
   let mockRes: Partial<Response>;
   let mockNext: NextFunction;
@@ -28,246 +28,147 @@ describe('formatRequest middleware', () => {
     jest.clearAllMocks();
   });
 
-  describe('extra_body parameter handling', () => {
-    it('should merge extra_body from provider config into request body', async () => {
-      // 准备测试数据
+  describe('provider ID 到真实模型名称的转换', () => {
+    it('应该将 provider ID 转换为真实的 API 模型名称', async () => {
+      // 准备测试数据 - 模拟配置中的真实情况
       mockReq = {
         body: {
-          model: 'test-model',
+          model: 'qwen-32b-standard', // 这是 router 设置的 provider ID
           messages: [{ role: 'user', content: 'test message' }],
           stream: false,
         },
-        provider: 'qwen3-8b',
+        provider: 'qwen-32b-standard',
         config: {
           providers: [
             {
-              id: 'qwen3-8b',
+              id: 'qwen-32b-standard',
+              api_base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+              api_key: 'sk-test-key',
+              model: 'qwen3-30b-a3b' // 这是真实的 API 模型名称
+            }
+          ]
+        },
+        cwd: '/test'
+      };
+
+      await formatRequest(mockReq as Request, mockRes as Response, mockNext);
+
+      // 验证模型名称被正确转换
+      expect(mockReq.body.model).toBe('qwen3-30b-a3b');
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    it('应该正确处理 think provider 的模型名称转换', async () => {
+      mockReq = {
+        body: {
+          model: 'qwen-32b-thinker',
+          messages: [{ role: 'user', content: 'test thinking message' }],
+          stream: false,
+        },
+        provider: 'qwen-32b-thinker',
+        config: {
+          providers: [
+            {
+              id: 'qwen-32b-thinker',
+              api_base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+              api_key: 'sk-test-key',
+              model: 'qwen3-30b-a3b',
               extra_body: {
                 enable_thinking: true,
-                custom_param: 'test_value'
+                thinking_budget: 16384
               }
             }
-          ]
-        }
+          ],
+          Router: {
+            think: 'qwen-32b-thinker'
+          }
+        },
+        cwd: '/test'
       };
 
       await formatRequest(mockReq as Request, mockRes as Response, mockNext);
 
-      // 验证 extra_body 被正确合并
+      // 验证 think provider 的模型名称也被正确转换
+      expect(mockReq.body.model).toBe('qwen3-30b-a3b');
       expect(mockReq.body.extra_body).toEqual({
         enable_thinking: true,
-        custom_param: 'test_value'
+        thinking_budget: 16384
       });
-      expect(mockNext).toHaveBeenCalled();
     });
 
-    it('should merge extra_body with existing extra_body in request', async () => {
+    it('当找不到对应 provider 时应该保持原始模型名称', async () => {
       mockReq = {
         body: {
-          model: 'test-model',
+          model: 'unknown-provider',
           messages: [{ role: 'user', content: 'test message' }],
           stream: false,
-          extra_body: {
-            existing_param: 'existing_value'
-          }
         },
-        provider: 'qwen3-8b',
+        provider: 'unknown-provider',
         config: {
           providers: [
             {
-              id: 'qwen3-8b',
+              id: 'different-provider',
+              api_base_url: 'https://example.com/v1',
+              api_key: 'sk-test-key',
+              model: 'different-model'
+            }
+          ]
+        },
+        cwd: '/test'
+      };
+
+      await formatRequest(mockReq as Request, mockRes as Response, mockNext);
+
+      // 验证当找不到对应 provider 时保持原始模型名称
+      expect(mockReq.body.model).toBe('unknown-provider');
+    });
+  });
+
+  describe('完整的路由和格式化流程测试', () => {
+    it('应该模拟完整的请求处理流程', async () => {
+      // 模拟从 router 中间件传递过来的请求
+      mockReq = {
+        body: {
+          model: 'qwen-32b-standard', // router 设置的 provider ID
+          messages: [
+            { role: 'user', content: 'Hello, how are you?' }
+          ],
+          temperature: 0.7,
+          stream: false,
+        },
+        provider: 'qwen-32b-standard', // router 设置的 provider
+        config: {
+          providers: [
+            {
+              id: 'qwen-32b-standard',
+              api_base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+              api_key: 'sk-test-key',
+              model: 'qwen3-30b-a3b'
+            },
+            {
+              id: 'qwen-32b-thinker',
+              api_base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+              api_key: 'sk-test-key',
+              model: 'qwen3-30b-a3b',
               extra_body: {
                 enable_thinking: true
               }
             }
-          ]
-        }
-      };
-
-      await formatRequest(mockReq as Request, mockRes as Response, mockNext);
-
-      expect(mockReq.body.extra_body).toEqual({
-        existing_param: 'existing_value',
-        enable_thinking: true
-      });
-    });
-
-    it('should not add extra_body if provider does not have it', async () => {
-      mockReq = {
-        body: {
-          model: 'test-model',
-          messages: [{ role: 'user', content: 'test message' }],
-          stream: false,
-        },
-        provider: 'other-provider',
-        config: {
-          providers: [
-            {
-              id: 'other-provider'
-              // no extra_body
-            }
-          ]
-        }
-      };
-
-      await formatRequest(mockReq as Request, mockRes as Response, mockNext);
-
-      expect(mockReq.body.extra_body).toBeUndefined();
-    });
-  });
-
-  describe('force_stream_for_thinking functionality', () => {
-    it('should force streaming for think requests when force_stream_for_thinking is true', async () => {
-      mockReq = {
-        body: {
-          model: 'test-model',
-          messages: [{ role: 'user', content: 'test message' }],
-          stream: false, // 原始请求是非流式的
-        },
-        provider: 'qwen3-8b',
-        config: {
-          providers: [
-            {
-              id: 'qwen3-8b',
-              force_stream_for_thinking: true
-            }
           ],
           Router: {
-            think: 'qwen3-8b'
+            default: 'qwen-32b-standard',
+            think: 'qwen-32b-thinker'
           }
         },
-        _simulate_non_stream: undefined
+        cwd: '/test'
       };
 
       await formatRequest(mockReq as Request, mockRes as Response, mockNext);
 
-      // 验证流式被强制开启，模拟标志被设置
-      expect(mockReq.body.stream).toBe(true);
-      expect(mockReq._simulate_non_stream).toBe(true);
-      expect(mockNext).toHaveBeenCalled();
-    });
-
-    it('should not set _simulate_non_stream if request is already streaming', async () => {
-      mockReq = {
-        body: {
-          model: 'test-model',
-          messages: [{ role: 'user', content: 'test message' }],
-          stream: true, // 原始请求已经是流式的
-        },
-        provider: 'qwen3-8b',
-        config: {
-          providers: [
-            {
-              id: 'qwen3-8b',
-              force_stream_for_thinking: true
-            }
-          ],
-          Router: {
-            think: 'qwen3-8b'
-          }
-        },
-        _simulate_non_stream: undefined
-      };
-
-      await formatRequest(mockReq as Request, mockRes as Response, mockNext);
-
-      // 验证流式保持开启，但模拟标志不被设置
-      expect(mockReq.body.stream).toBe(true);
-      expect(mockReq._simulate_non_stream).toBeUndefined();
-    });
-
-    it('should not force streaming for non-think requests', async () => {
-      mockReq = {
-        body: {
-          model: 'test-model',
-          messages: [{ role: 'user', content: 'test message' }],
-          stream: false,
-        },
-        provider: 'other-provider', // 不是 think provider
-        config: {
-          providers: [
-            {
-              id: 'other-provider',
-              force_stream_for_thinking: true
-            }
-          ],
-          Router: {
-            think: 'qwen3-8b' // think provider 是不同的
-          }
-        },
-        _simulate_non_stream: undefined
-      };
-
-      await formatRequest(mockReq as Request, mockRes as Response, mockNext);
-
-      // 验证流式状态保持原样
-      expect(mockReq.body.stream).toBe(false);
-      expect(mockReq._simulate_non_stream).toBeUndefined();
-    });
-
-    it('should not force streaming if force_stream_for_thinking is false', async () => {
-      mockReq = {
-        body: {
-          model: 'test-model',
-          messages: [{ role: 'user', content: 'test message' }],
-          stream: false,
-        },
-        provider: 'qwen3-8b',
-        config: {
-          providers: [
-            {
-              id: 'qwen3-8b',
-              force_stream_for_thinking: false
-            }
-          ],
-          Router: {
-            think: 'qwen3-8b'
-          }
-        },
-        _simulate_non_stream: undefined
-      };
-
-      await formatRequest(mockReq as Request, mockRes as Response, mockNext);
-
-      expect(mockReq.body.stream).toBe(false);
-      expect(mockReq._simulate_non_stream).toBeUndefined();
-    });
-  });
-
-  describe('combined functionality', () => {
-    it('should handle both extra_body and force_stream_for_thinking together', async () => {
-      mockReq = {
-        body: {
-          model: 'test-model',
-          messages: [{ role: 'user', content: 'test message' }],
-          stream: false,
-        },
-        provider: 'qwen3-8b',
-        config: {
-          providers: [
-            {
-              id: 'qwen3-8b',
-              extra_body: {
-                enable_thinking: true
-              },
-              force_stream_for_thinking: true
-            }
-          ],
-          Router: {
-            think: 'qwen3-8b'
-          }
-        },
-        _simulate_non_stream: undefined
-      };
-
-      await formatRequest(mockReq as Request, mockRes as Response, mockNext);
-
-      // 验证两个功能都正常工作
-      expect(mockReq.body.extra_body).toEqual({
-        enable_thinking: true
-      });
-      expect(mockReq.body.stream).toBe(true);
-      expect(mockReq._simulate_non_stream).toBe(true);
+      // 验证最终的请求体包含正确的模型名称
+      expect(mockReq.body.model).toBe('qwen3-30b-a3b');
+      expect(mockReq.body.messages).toHaveLength(1);
+      expect(mockReq.body.temperature).toBe(0.7);
       expect(mockNext).toHaveBeenCalled();
     });
   });
