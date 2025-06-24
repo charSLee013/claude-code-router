@@ -50,6 +50,7 @@ export const DEFAULT_CONFIG = {
   Router: {
     background: "",
     think: "",
-    longContext: ""
+    longContext: "",
+    default: ""
   }
 };

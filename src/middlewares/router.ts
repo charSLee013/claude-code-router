@@ -40,6 +40,16 @@ const getUseModel = (req: Request, tokenCount: number) => {
       model,
     };
   }
+  // Use Router.default as fallback
+  const defaultModelId = req.config.Router?.default;
+  if (defaultModelId) {
+    log("Using default router model:", defaultModelId);
+    return {
+      provider: defaultModelId,
+      model: defaultModelId,
+    };
+  }
+  // Final fallback to "default" provider if Router.default is not configured
   return {
     provider: "default",
     model: req.config.OPENAI_MODEL,

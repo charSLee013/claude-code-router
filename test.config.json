@@ -27,6 +27,7 @@
   "Router": {
     "background": "qwen3-8b",
     "think": "qwen3-8b",
-    "longContext": "qwen3-8b"
+    "longContext": "qwen3-8b",
+    "default": "qwen3-8b"
   }
 } 

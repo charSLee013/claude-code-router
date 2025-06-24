@@ -28,6 +28,7 @@ export interface Config {
     background?: string;
     think?: string;
     longContext?: string;
+    default?: string;
   };
   usePlugins?: string[];
   features?: {
@@ -200,6 +201,12 @@ export function validateThinkingModeConfig(config: Config): {
     
     if (longContext && config.providers && !config.providers.find(p => p.id === longContext)) {
       errors.push(`Router.longContext 配置的 provider "${longContext}" 不存在于 providers 列表中`);
+    }
+    
+    // 验证 default 路由配置
+    const { default: defaultProvider } = config.Router;
+    if (defaultProvider && config.providers && !config.providers.find(p => p.id === defaultProvider)) {
+      errors.push(`Router.default 配置的 provider "${defaultProvider}" 不存在于 providers 列表中`);
     }
   }
   

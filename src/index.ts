@@ -184,11 +184,8 @@ async function run(cwd: string, options: RunOptions = {}) {
   ) {
     server.useMiddleware(router);
   } else {
-    server.useMiddleware((req, res, next) => {
-      req.provider = "default";
-      req.body.model = config.OPENAI_MODEL;
-      next();
-    });
+    // Always use router middleware to handle routing logic
+    server.useMiddleware(router);
   }
   server.useMiddleware(formatRequest);
 

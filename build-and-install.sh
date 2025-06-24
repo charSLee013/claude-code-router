@@ -135,8 +135,8 @@ fi
 log_success "全局安装完成"
 
 # 创建全局配置目录和文件
-GLOBAL_CONFIG_DIR="$HOME/.ccb"
-GLOBAL_CONFIG_FILE="$GLOBAL_CONFIG_DIR/config.json"
+GLOBAL_CONFIG_DIR="$HOME/.claude"
+GLOBAL_CONFIG_FILE="$GLOBAL_CONFIG_DIR/ccb-config.json"
 
 log_info "创建全局配置目录和文件..."
 if [ ! -d "$GLOBAL_CONFIG_DIR" ]; then
@@ -147,13 +147,11 @@ fi
 if [ ! -f "$GLOBAL_CONFIG_FILE" ]; then
     cat > "$GLOBAL_CONFIG_FILE" << EOF
 {
-  "OPENAI_API_KEY": "your-api-key",
-  "OPENAI_BASE_URL": "https://api.deepseek.com",
-  "OPENAI_MODEL": "deepseek-chat",
+  "log": true,
+  "logEnabled": true,
   "basePort": 3456,
   "timeout": 30000,
   "maxRetries": 3,
-  "logEnabled": false,
   "autoStart": false,
   "providers": [
     {
@@ -189,7 +187,8 @@ if [ ! -f "$GLOBAL_CONFIG_FILE" ]; then
   "Router": {
     "background": "qwen-coder",
     "think": "deepseek-reasoner",
-    "longContext": "gemini-2.5-pro"
+    "longContext": "gemini-2.5-pro",
+    "default": "deepseek-chat"
   }
 }
 EOF
@@ -201,6 +200,7 @@ fi
 
 # 清理旧的配置目录 (如果存在)
 OLD_CONFIG_DIR="$HOME/.claude-code-router"
+OLD_CCB_CONFIG_DIR="$HOME/.ccb"
 if [ -d "$OLD_CONFIG_DIR" ]; then
     log_warning "检测到旧的配置目录: $OLD_CONFIG_DIR"
     read -p "是否要删除旧的配置目录？(y/n) " -n 1 -r
@@ -208,6 +208,16 @@ if [ -d "$OLD_CONFIG_DIR" ]; then
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         rm -rf "$OLD_CONFIG_DIR"
         log_success "已删除旧的配置目录"
+    fi
+fi
+
+if [ -d "$OLD_CCB_CONFIG_DIR" ]; then
+    log_warning "检测到旧的CCB配置目录: $OLD_CCB_CONFIG_DIR"
+    read -p "是否要删除旧的CCB配置目录？(y/n) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        rm -rf "$OLD_CCB_CONFIG_DIR"
+        log_success "已删除旧的CCB配置目录"
     fi
 fi
 
@@ -228,8 +238,13 @@ echo "5. 停止服务: ccb stop"
 echo ""
 echo "工作区特性:"
 echo "- 每个项目目录独立运行服务"
-echo "- 自动创建 .ccb/ 目录存储工作区配置和日志"
+echo "- 自动创建 .claude/ 目录存储工作区配置和日志"
 echo "- 支持工作区级配置覆盖全局配置"
+echo ""
+echo "Router.default 功能:"
+echo "- 支持配置默认路由模型: Router.default"
+echo "- 当请求不匹配特定条件时自动使用默认模型"
+echo "- 优先级: think > background > longContext > default > 旧fallback"
 echo ""
 echo "更多信息，请参考 README.md 和 DETAILED_GUIDE.md 文档。"
 echo ""

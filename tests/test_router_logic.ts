@@ -78,9 +78,9 @@ const testCases = [
       model: "some-other-model",
       messages: [{ role: "user", content: "普通测试消息" }]
     }),
-    expectedProvider: "default",
-    expectedModel: testConfig.OPENAI_MODEL,
-    description: "当不满足特殊条件时，应该使用默认配置"
+    expectedProvider: "qwen3-8b",
+    expectedModel: "qwen3-8b",
+    description: "当不满足特殊条件时，应该使用 Router.default 配置的模型"
   }
 ];
 
