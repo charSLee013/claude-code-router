@@ -1,5 +1,6 @@
 import { getServiceState } from './processCheck';
-import { loadConfig, getLogFilePath } from './config';
+import { loadConfig } from './config';
+import { getLogFilePath } from './log';
 import { checkClaudeInstallation, getClaudeVersion } from './codeCommand';
 import { getWorkspacePaths } from '../constants';
 import fs from 'node:fs';

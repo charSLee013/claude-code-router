@@ -28,7 +28,7 @@ export const rewriteBody = async (
   res: Response,
   next: NextFunction
 ) => {
-  if (!req.config.usePlugins) {
+  if (!req.config?.usePlugins) {
     return next();
   }
   for (const plugin of req.config.usePlugins) {

@@ -9,29 +9,35 @@ const getUseModel = (req: Request, tokenCount: number) => {
   // if tokenCount is greater than 32K, use the long context model
   if (tokenCount > 1000 * 32) {
     log("Using long context model due to token count:", tokenCount);
-    const modelId = req.config.Router!.longContext;
-    return {
-      provider: modelId,
-      model: modelId,
-    };
+    const modelId = req.config?.Router?.longContext;
+    if (modelId) {
+      return {
+        provider: modelId,
+        model: modelId,
+      };
+    }
   }
   // If the model is claude-3-5-haiku, use the background model
   if (req.body.model?.startsWith("claude-3-5-haiku")) {
     log("Using background model for ", req.body.model);
-    const modelId = req.config.Router!.background;
-    return {
-      provider: modelId,
-      model: modelId,
-    };
+    const modelId = req.config?.Router?.background;
+    if (modelId) {
+      return {
+        provider: modelId,
+        model: modelId,
+      };
+    }
   }
   // if exits thinking, use the think model
   if (req.body.thinking) {
     log("Using think model for ", req.body.thinking);
-    const modelId = req.config.Router!.think;
-    return {
-      provider: modelId,
-      model: modelId,
-    };
+    const modelId = req.config?.Router?.think;
+    if (modelId) {
+      return {
+        provider: modelId,
+        model: modelId,
+      };
+    }
   }
   const [provider, model] = req.body.model.split(",");
   if (provider && model) {
@@ -41,7 +47,7 @@ const getUseModel = (req: Request, tokenCount: number) => {
     };
   }
   // Use Router.default as fallback
-  const defaultModelId = req.config.Router?.default;
+  const defaultModelId = req.config?.Router?.default;
   if (defaultModelId) {
     log("Using default router model:", defaultModelId);
     return {
@@ -52,7 +58,7 @@ const getUseModel = (req: Request, tokenCount: number) => {
   // Final fallback to "default" provider if Router.default is not configured
   return {
     provider: "default",
-    model: req.config.OPENAI_MODEL,
+    model: req.config?.OPENAI_MODEL || "gpt-3.5-turbo",
   };
 };
 
@@ -116,7 +122,7 @@ export const router = async (
   } catch (error: any) {
     log("Error in router middleware:", error.message);
     req.provider = "default";
-    req.body.model = req.config.OPENAI_MODEL;
+    req.body.model = req.config?.OPENAI_MODEL || "gpt-3.5-turbo";
   } finally {
     next();
   }

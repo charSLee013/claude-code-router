@@ -253,11 +253,11 @@ export function loadConfig(cwd: string): Config {
   
   // 第二层：全局用户配置
   const globalConfig = safeReadConfig(GLOBAL_CONFIG_FILE);
-  config = deepMerge(config, globalConfig);
+  config = deepMerge(config, globalConfig) as typeof config;
   
   // 第三层：工作区配置
   const workspaceConfig = safeReadConfig(workspacePaths.configFile);
-  config = deepMerge(config, workspaceConfig);
+  config = deepMerge(config, workspaceConfig) as typeof config;
   
   // 验证最终配置
   const validation = validateConfig(config);
