@@ -1,6 +1,6 @@
 import { Response, Request } from "express";
 import { OpenAI } from "openai";
-import { log } from "./log";
+import { logWithConfig } from "./log";
 
 interface ContentBlock {
   type: string;
@@ -48,6 +48,13 @@ export async function streamOpenAIResponse(
   body: any,
   req?: Request
 ) {
+  // 创建便捷的日志函数
+  const log = (...args: any[]) => {
+    if (req?.cwd && req?.config) {
+      logWithConfig(req.cwd, req.config, ...args);
+    }
+  };
+
   const write = (data: string) => {
     log("response: ", data);
     res.write(data);
@@ -151,7 +158,7 @@ export async function streamOpenAIResponse(
             toolCall.function.arguments = JSON.parse(toolCall.function.arguments);
           }
         } catch (e) {
-          log("解析工具调用参数失败:", e);
+          log("解析工具调用参数失败:", e instanceof Error ? e.message : String(e));
         }
       }
       
@@ -181,7 +188,7 @@ export async function streamOpenAIResponse(
       res.end();
       return;
     } catch (e) {
-      log("模拟非流式请求处理出错:", e);
+      log("模拟非流式请求处理出错:", e instanceof Error ? e.message : String(e));
       // 如果出错，继续尝试正常的流式处理
     }
   }
@@ -260,7 +267,7 @@ export async function streamOpenAIResponse(
             const parsedJson = JSON.parse(toolUseJson);
             currentContentBlocks[contentBlockIndex].input = parsedJson;
           } catch (e) {
-            log(e);
+            log("JSON解析错误:", e instanceof Error ? e.message : String(e));
             // JSON not yet complete, continue accumulating
           }
 

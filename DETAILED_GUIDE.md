@@ -284,28 +284,57 @@ server.useMiddleware(formatRequest);
 **关键代码** (`src/middlewares/formatRequest.ts`):
 ```typescript
 export const formatRequest = async (req, res, next) => {
-  const providers = new Map(req.config.providers?.map(p => [p.id, p]) || []);
-  const currentProvider = providers.get(req.provider);
+  const { model } = req.body;
   
-  if (currentProvider) {
-    // 应用 extra_body 配置
-    if (currentProvider.extra_body) {
-      req.body = { ...req.body, ...currentProvider.extra_body };
-    }
-    
-    // 处理 force_stream_for_thinking
-    if (req.body.thinking && currentProvider.force_stream_for_thinking) {
-      req.body.stream = true;
-      req._simulate_non_stream = true;
-    }
-    
-    // 设置模型名称
-    req.body.model = currentProvider.model;
+  // 获取当前provider配置，使用空值安全检查
+  const currentProvider = req.config?.providers?.find((p: { id: string }) => p.id === req.provider);
+  
+  // 确定真实的API模型名称（重要：区分provider ID和真实模型名称）
+  const realModelName = currentProvider?.model || model;
+  
+  const data = {
+    model: realModelName,  // 使用真实的API模型名称而非provider ID
+    messages: req.body.messages,
+    temperature: req.body.temperature || 0.7,
+    stream: req.body.stream || false,
+    // ... 其他参数
+  };
+  
+  // 应用provider的extra_body配置
+  const mergedExtraBody = {
+    ...(req.body.extra_body || {}),
+    ...(currentProvider?.extra_body || {})
+  };
+  
+  // 处理思考模式的强制流式传输
+  const isThinkRequest = req.provider === req.config?.Router?.think;
+  if (isThinkRequest && currentProvider?.force_stream_for_thinking && req.body.thinking) {
+    data.stream = true;
+    req._simulate_non_stream = true;
   }
+  
+  // 更新请求体
+  req.body = { ...data, ...mergedExtraBody };
   
   next();
 };
 ```
+
+**重要说明**：
+- `realModelName`变量确保API调用使用正确的模型名称，而不是provider ID
+- 空值安全检查（`?.`）防止配置不存在时的运行时错误  
+- 模型名称映射逻辑确保日志和错误信息显示真实的API模型名称
+
+**为什么需要区分 Provider ID 和真实模型名称？**
+
+1. **Provider ID** (`qwen-32b-standard`): 内部路由标识，用于配置管理和路由决策
+2. **真实模型名称** (`qwen3-30b-a3b`): API 提供商要求的实际模型标识
+
+这种分离设计的优势：
+- **配置灵活性**: 可以为同一个 API 模型创建多个不同配置的 provider
+- **错误追踪**: 日志显示真实的 API 模型名称，便于问题定位
+- **API 兼容性**: 确保发送给 API 提供商的请求使用正确的模型标识
+- **向后兼容**: 如果 provider 未配置 model 字段，自动回退到原始模型名称
 
 ---
 
@@ -440,190 +469,4 @@ if (req.provider === 'my-custom-provider') {
 #### 1. 中间件调试
 
 在关键中间件中设置断点：
-- `src/middlewares/router.ts:15` - 路由决策点
-- `src/middlewares/formatRequest.ts:20` - 请求格式化点
-- `src/utils/config.ts:45` - 配置加载点
-
-#### 2. 日志调试
-
-启用详细日志：
-```json
-{
-  "logEnabled": true
-}
-```
-
-日志文件位置: `<workspace>/.claude/service.log`
-
-#### 3. 网络调试
-
-监控 HTTP 请求：
-```bash
-# 查看服务状态
-ccb status
-
-# 测试健康检查
-curl http://localhost:<port>/health
-
-# 监控网络流量
-netstat -an | grep <port>
-```
-
-### 常见调试场景
-
-#### 1. 配置不生效
-- 检查配置文件优先级
-- 验证 JSON 格式正确性
-- 确认环境变量设置
-
-#### 2. 路由异常
-- 在 `router.ts` 中添加日志输出
-- 检查 token 计算逻辑
-- 验证 provider 配置
-
-#### 3. 端口冲突
-- 检查随机端口分配逻辑
-- 查看系统端口占用情况
-- 调整端口范围配置
-
----
-
-## 性能优化指南
-
-### 配置优化
-
-1. **合理配置超时时间**:
-```json
-{
-  "timeout": 30000,
-  "maxRetries": 3
-}
-```
-
-2. **选择合适的模型组合**:
-- `background`: 轻量级本地模型
-- `think`: 强推理模型
-- `longContext`: 长上下文专用模型
-
-3. **启用缓存机制**:
-```typescript
-const providerCache = new LRUCache<string, OpenAI>({
-  max: 10,
-  ttl: 2 * 60 * 60 * 1000, // 2小时
-});
-```
-
-### 监控和分析
-
-1. **启用日志监控**:
-```bash
-tail -f <workspace>/.claude/service.log
-```
-
-2. **性能指标收集**:
-- 请求响应时间
-- 模型切换频率
-- 错误率统计
-
-3. **资源使用监控**:
-```bash
-# 查看进程资源使用
-ps aux | grep node
-
-# 监控端口使用
-lsof -i :<port>
-```
-
----
-
-## 故障排除
-
-### 常见问题解决
-
-#### 1. 服务启动失败
-```bash
-# 检查服务状态
-ccb status
-
-# 查看详细错误日志
-cat <workspace>/.claude/service.log
-
-# 手动清理服务状态
-rm <workspace>/.claude/service.json
-```
-
-#### 2. 配置不生效
-```bash
-# 验证配置文件语法
-cat <workspace>/.claude/ccb-config.json | jq .
-
-# 检查环境变量
-env | grep OPENAI
-```
-
-#### 3. 网络连接问题
-```bash
-# 测试 API 连接
-curl -H "Authorization: Bearer $OPENAI_API_KEY" \
-     $OPENAI_BASE_URL/models
-
-# 检查代理设置
-echo $HTTP_PROXY $HTTPS_PROXY
-```
-
-### 错误代码参考
-
-| 错误类型 | 原因 | 解决方案 |
-|----------|------|----------|
-| `EADDRINUSE` | 端口被占用 | 自动重新分配端口 |
-| `ENOENT` | 配置文件不存在 | 使用默认配置 |
-| `SyntaxError` | JSON 格式错误 | 检查配置文件语法 |
-| `ECONNREFUSED` | API 连接失败 | 检查网络和 API 配置 |
-
----
-
-## 最佳实践
-
-### 项目组织
-
-1. **全局配置**: 设置通用的 API 密钥和默认模型
-2. **工作区配置**: 为特定项目定制 provider 组合
-3. **环境变量**: 管理敏感信息和临时覆盖
-
-### 安全考虑
-
-1. **API 密钥管理**:
-   - 使用环境变量存储敏感信息
-   - 避免在配置文件中硬编码密钥
-   - 定期轮换 API 密钥
-
-2. **网络安全**:
-   - 使用 HTTPS 端点
-   - 配置适当的代理设置
-   - 监控异常网络活动
-
-### 成本控制
-
-1. **模型选择策略**:
-   - 后台任务使用免费/低成本模型
-   - 复杂任务选择性使用高端模型
-   - 长上下文场景使用专门优化的模型
-
-2. **使用监控**:
-   - 跟踪不同模型的使用频率
-   - 分析成本效益比
-   - 优化路由规则
-
-### 团队协作
-
-1. **配置模板**:
-   - 提供标准化的配置模板
-   - 文档化最佳实践
-   - 版本控制配置文件
-
-2. **环境一致性**:
-   - 统一开发环境配置
-   - 使用环境变量管理差异
-   - 自动化部署配置
-
-通过本深度指南，您应该能够完全掌握 Claude Code Bridge 的各个方面，从基础使用到高级定制开发。如果您有任何问题或需要进一步的技术支持，请参考项目的 GitHub 仓库或联系维护团队。 
+- `

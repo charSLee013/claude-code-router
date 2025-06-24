@@ -152,6 +152,24 @@ CCB 使用三层配置系统，优先级从高到低：
 
 格式: `/model provider_id,model_name`
 
+**重要提示：模型名称配置**
+
+在配置 provider 时，`model` 字段应该填写真实的 API 模型名称，而不是 provider ID。例如：
+
+```json
+{
+  "id": "qwen-32b-standard",
+  "api_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", 
+  "api_key": "your-api-key",
+  "model": "qwen3-30b-a3b"  // 这里是真实的API模型名称
+}
+```
+
+这样配置确保：
+- API 请求使用正确的模型名称
+- 日志和错误信息显示真实的模型名称  
+- 避免因模型名称不匹配导致的调用失败
+
 ## 工作区特性
 
 ### 独立服务管理
