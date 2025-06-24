@@ -61,12 +61,12 @@ ccb --help
 CCB 使用三层配置系统，优先级从高到低：
 
 1. **环境变量** (最高优先级)
-2. **工作区配置**: `<your-project>/.claude/config.json`
-3. **全局配置**: `~/.claude/config.json` (最低优先级)
+2. **工作区配置**: `<your-project>/.claude/ccb-config.json`
+3. **全局配置**: `~/.claude/ccb-config.json` (最低优先级)
 
 ### 基础配置示例
 
-创建配置文件 `~/.claude/config.json` 或在项目目录下创建 `.claude/config.json`：
+创建配置文件 `~/.claude/ccb-config.json` 或在项目目录下创建 `.claude/ccb-config.json`：
 
 ```json
 {
@@ -159,7 +159,7 @@ CCB 使用三层配置系统，优先级从高到低：
 每个项目目录都拥有独立的服务实例：
 
 - 独立的进程和端口
-- 独立的配置文件 (`.claude/config.json`)
+- 独立的配置文件 (`.claude/ccb-config.json`)
 - 独立的日志文件 (`.claude/service.log`)
 - 独立的状态管理 (`.claude/service.json`)
 
@@ -174,7 +174,7 @@ CCB 使用三层配置系统，优先级从高到低：
 ```
 your-project/
 ├── .claude/
-│   ├── config.json      # 工作区配置
+│   ├── ccb-config.json      # 工作区配置
 │   ├── service.log      # 服务日志  
 │   └── service.json     # 服务状态
 ├── .gitignore           # 自动更新忽略 .claude/ 目录

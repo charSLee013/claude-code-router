@@ -33,8 +33,8 @@ CCB 实现了灵活的三层配置系统，提供强大的配置管理能力。
 ### 配置优先级
 
 1. **环境变量** (最高优先级)
-2. **工作区配置**: `<project-dir>/.claude/config.json`
-3. **全局配置**: `~/.claude/config.json` (最低优先级)
+2. **工作区配置**: `<project-dir>/.claude/ccb-config.json`
+3. **全局配置**: `~/.claude/ccb-config.json` (最低优先级)
 
 ### 配置加载机制
 
@@ -68,7 +68,7 @@ export function loadConfig(cwd: string): any {
 ```
 your-project/
 ├── .claude/
-│   ├── config.json      # 工作区配置文件
+│   ├── ccb-config.json      # 工作区配置文件
 │   ├── service.log      # 服务日志文件
 │   └── service.json     # 服务状态文件
 ├── .gitignore           # 自动更新以忽略 .claude/ 目录
@@ -555,7 +555,7 @@ rm <workspace>/.claude/service.json
 #### 2. 配置不生效
 ```bash
 # 验证配置文件语法
-cat <workspace>/.claude/config.json | jq .
+cat <workspace>/.claude/ccb-config.json | jq .
 
 # 检查环境变量
 env | grep OPENAI
