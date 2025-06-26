@@ -2,6 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { DEFAULT_CONFIG, GLOBAL_CONFIG_FILE, getWorkspacePaths } from "../constants";
 
+export interface Provider {
+  id: string;
+  api_base_url: string;
+  api_key: string;
+  model: string;
+  extra_body?: Record<string, any>;
+  force_stream_for_thinking?: boolean;
+}
+
 /**
  * 配置类型定义
  */
@@ -16,14 +25,7 @@ export interface Config {
   basePort?: number;
   logEnabled?: boolean;
   autoStart?: boolean;
-  providers?: Array<{
-    id: string;
-    api_base_url: string;
-    api_key: string;
-    model: string;
-    extra_body?: Record<string, any>;
-    force_stream_for_thinking?: boolean;
-  }>;
+  providers?: Provider[];
   Router?: {
     background?: string;
     think?: string;

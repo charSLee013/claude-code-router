@@ -3,6 +3,7 @@ import { loadConfig } from './config';
 import { getLogFilePath } from './log';
 import { checkClaudeInstallation, getClaudeVersion } from './codeCommand';
 import { getWorkspacePaths } from '../constants';
+import { checkProviders, ProviderStatus } from './providerCheck';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -76,6 +77,28 @@ export async function showStatus(cwd: string) {
     } else {
         console.log('   Claude Code: ❌ 未安装');
         console.log('   安装命令: npm install -g @anthropic-ai/claude-code');
+    }
+    console.log('');
+
+    // Provider status check
+    console.log('🔍 Provider 模型状态检查:');
+    try {
+        const providerStatuses = await checkProviders(config);
+        if (providerStatuses.length > 0) {
+            const table = providerStatuses.map(s => ({
+                'Provider ID': s.id,
+                '模型': s.model,
+                '可访问': s.accessible,
+                '函数调用': s.supports_function_calling,
+                'MCP': s.supports_mcp,
+                '错误': s.error || 'N/A'
+            }));
+            console.table(table);
+        } else {
+            console.log('   未配置Provider.');
+        }
+    } catch (error: any) {
+        console.log(`   检查Provider时出错: ${error.message}`);
     }
     console.log('');
     
