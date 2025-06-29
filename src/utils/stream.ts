@@ -1,6 +1,8 @@
 import { Response, Request } from "express";
 import { OpenAI } from "openai";
 import { logWithConfig } from "./log";
+import { normalizeToArray, isArrayLike } from "./dataTransform";
+import { formatAnthropicResponse, aggregateStreamChunks } from "./responseFormat";
 
 interface ContentBlock {
   type: string;
@@ -65,26 +67,15 @@ export async function streamOpenAIResponse(
   const simulateNonStream = req?._simulate_non_stream;
   
   if (!body.stream) {
-    res.json({
-      id: messageId,
-      type: "message",
-      role: "assistant",
-      // @ts-ignore
-      content: completion.choices[0].message.content || completion.choices[0].message.tool_calls?.map((item) => {
-        return {
-          type: 'tool_use',
-          id: item.id,
-          name: item.function?.name,
-          input: item.function?.arguments ? JSON.parse(item.function.arguments) : {},
-        };
-      }) || '',
-      stop_reason: completion.choices[0].finish_reason === 'tool_calls' ? "tool_use" : "end_turn",
-      stop_sequence: null,
-      usage: {
-        input_tokens: 100,
-        output_tokens: 50,
-      },
-    });
+    // 使用标准化的响应格式化工具
+    const formattedResponse = formatAnthropicResponse(
+      completion,
+      messageId,
+      req?.cwd,
+      req?.config
+    );
+    
+    res.json(formattedResponse);
     res.end();
     return;
   }
@@ -100,91 +91,19 @@ export async function streamOpenAIResponse(
         chunks.push(chunk);
       }
       
-      // 合并所有分块的内容
-      let mergedContent = "";
-      let toolCalls: Array<{
-        id: string;
-        type: string;
-        function: {
-          name?: string;
-          arguments: any;
-        };
-      }> = [];
-      let finishReason = "end_turn";
+      // 数据验证和调试日志
+      log("收集到", chunks.length, "个数据块");
       
-      for (const chunk of chunks) {
-        const delta = chunk.choices[0].delta;
-        
-        // 收集文本内容
-        if (delta.content) {
-          mergedContent += delta.content;
-        }
-        
-        // 收集工具调用
-        if (delta.tool_calls && delta.tool_calls.length > 0) {
-          finishReason = "tool_use";
-          // 处理工具调用
-          for (const toolCall of delta.tool_calls) {
-            const existingToolCall = toolCalls.find(t => t.id === toolCall.id);
-            if (existingToolCall) {
-              // 合并参数
-              if (toolCall.function?.arguments) {
-                existingToolCall.function.arguments += toolCall.function.arguments;
-              }
-            } else if (toolCall.id) {
-              // 添加新的工具调用
-              toolCalls.push({
-                id: toolCall.id,
-                type: "function",
-                function: {
-                  name: toolCall.function?.name,
-                  arguments: toolCall.function?.arguments || ""
-                }
-              });
-            }
-          }
-        }
-        
-        // 检查完成原因
-        if (chunk.choices[0].finish_reason) {
-          finishReason = chunk.choices[0].finish_reason === 'tool_calls' ? "tool_use" : "end_turn";
-        }
-      }
+      // 使用标准化的聚合工具
+      const aggregatedResponse = aggregateStreamChunks(
+        chunks,
+        messageId,
+        req?.cwd,
+        req?.config
+      );
       
-      // 处理工具调用的参数，确保是有效的 JSON
-      for (const toolCall of toolCalls) {
-        try {
-          if (toolCall.function?.arguments) {
-            toolCall.function.arguments = JSON.parse(toolCall.function.arguments);
-          }
-        } catch (e) {
-          log("解析工具调用参数失败:", e instanceof Error ? e.message : String(e));
-        }
-      }
-      
-      // 构造响应
-      const response = {
-        id: messageId,
-        type: "message",
-        role: "assistant",
-        content: toolCalls.length > 0 
-          ? toolCalls.map(item => ({
-              type: 'tool_use',
-              id: item.id,
-              name: item.function?.name,
-              input: item.function?.arguments || {},
-            }))
-          : mergedContent,
-        stop_reason: finishReason,
-        stop_sequence: null,
-        usage: {
-          input_tokens: 100,
-          output_tokens: chunks.length * 5, // 粗略估计
-        },
-      };
-      
-      log("模拟非流式响应:", response);
-      res.json(response);
+      log("模拟非流式响应聚合完成:", aggregatedResponse);
+      res.json(aggregatedResponse);
       res.end();
       return;
     } catch (e) {
