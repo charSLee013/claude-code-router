@@ -29,13 +29,14 @@ export const formatRequest = async (
   let {
     model,
     max_tokens,
+    max_new_tokens,
     messages,
     system = [],
     temperature,
     metadata,
     tools,
     stream,
-  }: MessageCreateParamsBase = req.body;
+  }: MessageCreateParamsBase & { max_new_tokens?: number } = req.body;
   log("formatRequest: ", req.body);
   try {
     // @ts-ignore
@@ -173,12 +174,43 @@ export const formatRequest = async (
             content: item.text,
           }))
         : [{ role: "system", content: system }];
+    // 获取当前 provider 的配置
+    const currentProvider = req.config?.providers?.find((p: { id: string }) => p.id === req.provider);
+
+    // 确定真实的模型名称
+    const realModelName = currentProvider?.model || model;
+    
     const data: any = {
-      model,
+      model: realModelName,
       messages: [...systemMessages, ...openAIMessages],
       temperature,
       stream,
     };
+    
+    // Handle max_tokens and max_new_tokens parameters
+    // If max_new_tokens is provided, use it (for providers that support it)
+    // Otherwise, fall back to max_tokens
+    // For providers that don't support max_new_tokens, convert it to max_tokens
+    if (max_new_tokens !== undefined) {
+      // Check if this is a provider that supports max_new_tokens
+      // More robust provider detection based on provider configuration rather than just model names
+      const isOpenAIProvider = realModelName.includes('gpt') || realModelName.includes('text-') || 
+                              (currentProvider?.api_base_url?.includes('openai.com') ?? false);
+      const isAnthropicProvider = realModelName.includes('claude') || 
+                                 (currentProvider?.api_base_url?.includes('anthropic.com') ?? false);
+      
+      if (isOpenAIProvider || isAnthropicProvider) {
+        // Convert max_new_tokens to max_tokens for OpenAI/Anthropic
+        data.max_tokens = max_new_tokens;
+        log(`Converted max_new_tokens (${max_new_tokens}) to max_tokens for ${realModelName}`);
+      } else {
+        // Use max_new_tokens directly for other providers
+        data.max_new_tokens = max_new_tokens;
+        log(`Using max_new_tokens (${max_new_tokens}) directly for ${realModelName}`);
+      }
+    } else if (max_tokens !== undefined) {
+      data.max_tokens = max_tokens;
+    }
     if (tools) {
       data.tools = tools
         .filter((tool) => !["StickerRequest"].includes(tool.name))
@@ -197,15 +229,6 @@ export const formatRequest = async (
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     
-    // 获取当前 provider 的配置
-    const currentProvider = req.config?.providers?.find((p: { id: string }) => p.id === req.provider);
-
-    // 确定真实的模型名称
-    const realModelName = currentProvider?.model || model;
-
-    // 更新 data 对象中的模型名称为真实模型名称
-    data.model = realModelName;
-
     // 合并请求中的 extra_body 和 provider 配置中的 extra_body
     const initialExtraBody = req.body.extra_body || {};
     const providerExtraBody = currentProvider?.extra_body || {};
@@ -244,6 +267,14 @@ export const formatRequest = async (
       log(`[常规请求] 非思考请求，保持原始流式设置: ${data.stream}`);
     }
     
+    // Handle edge case where both max_new_tokens and max_tokens might be present
+    // This ensures we don't send both parameters which could cause issues with some providers
+    if (data.max_new_tokens !== undefined && data.max_tokens !== undefined) {
+      // If both are present, remove max_tokens as max_new_tokens takes precedence
+      delete data.max_tokens;
+      log(`Removed max_tokens parameter to avoid conflict with max_new_tokens`);
+    }
+    
     req.body = data;
     console.log(JSON.stringify(data.messages, null, 2));
   } catch (error) {
@@ -256,8 +287,8 @@ export const formatRequest = async (
     }
     
     // 确定真实的模型名称用于错误处理
-    const currentProvider = req.config?.providers?.find((p: { id: string }) => p.id === req.provider);
-    const realModelName = currentProvider?.model || model;
+    const errorCurrentProvider = req.config?.providers?.find((p: { id: string }) => p.id === req.provider);
+    const errorRealModelName = errorCurrentProvider?.model || model;
     
     const errorCompletion: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk> =
       {
@@ -265,7 +296,7 @@ export const formatRequest = async (
           yield {
             id: `error_${Date.now()}`,
             created: Math.floor(Date.now() / 1000),
-            model: realModelName,
+            model: errorRealModelName,
             object: "chat.completion.chunk",
             choices: [
               {
@@ -279,7 +310,7 @@ export const formatRequest = async (
           };
         },
       };
-    await streamOpenAIResponse(res, errorCompletion, realModelName, req.body, req);
+    await streamOpenAIResponse(res, errorCompletion, errorRealModelName, req.body, req);
   }
   next();
 };
