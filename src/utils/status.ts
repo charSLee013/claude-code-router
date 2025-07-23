@@ -16,113 +16,29 @@ export async function showStatus(cwd: string) {
     const config = loadConfig(cwd);
     const workspacePaths = getWorkspacePaths(cwd);
     
-    console.log('\n📊 CCB (Claude Code Bridge) 状态');
-    console.log('═'.repeat(50));
-    console.log(`📁 工作区: ${cwd}`);
-    console.log('');
-    
     // 服务状态
     if (serviceState) {
-        console.log('✅ 服务状态: 运行中');
-        console.log(`🆔 进程ID: ${serviceState.pid}`);
-        console.log(`🌐 端口: ${serviceState.port}`);
-        console.log(`📡 API端点: http://localhost:${serviceState.port}`);
-        console.log(`🏥 健康检查: http://localhost:${serviceState.port}/health`);
-        console.log(`📄 状态文件: ${workspacePaths.stateFile}`);
-        
-        // 检查进程是否真的在运行
-        try {
-            process.kill(serviceState.pid, 0);
-            console.log('✅ 进程验证: 正常运行');
-        } catch (error) {
-            console.log('⚠️  进程验证: 进程可能已停止，状态文件需要清理');
-        }
+        console.log(`Service: Running (PID: ${serviceState.pid}, Port: ${serviceState.port})`);
     } else {
-        console.log('❌ 服务状态: 未运行');
+        console.log('Service: Stopped');
     }
     
-    console.log('');
+    // 文件状态
+    console.log(`Config: ${fs.existsSync(workspacePaths.configFile) ? 'Found' : 'Not found'}`);
+    console.log(`Log: ${fs.existsSync(workspacePaths.logFile) ? 'Found' : 'Not found'}`);
     
-    // 配置信息
-    console.log('⚙️  配置信息:');
-    console.log(`   默认端口: ${config.port || 'N/A'}`);
-    console.log(`   日志启用: ${config.log ? '是' : '否'}`);
-    console.log(`   超时设置: ${config.timeout || 'N/A'}ms`);
-    console.log(`   最大重试: ${config.maxRetries || 'N/A'}`);
-    console.log(`   自动启动: ${config.features?.autostart ? '是' : '否'}`);
-    console.log('');
-    
-    // 文件路径信息
-    console.log('📂 文件路径:');
-    console.log(`   配置文件: ${workspacePaths.configFile}`);
-    console.log(`   日志文件: ${workspacePaths.logFile}`);
-    console.log(`   状态文件: ${workspacePaths.stateFile}`);
-    console.log(`   工作区目录: ${workspacePaths.ccbDir}`);
-    console.log('');
-    
-    // 文件存在性检查
-    console.log('📋 文件状态:');
-    console.log(`   配置文件: ${fs.existsSync(workspacePaths.configFile) ? '✅ 存在' : '❌ 不存在'}`);
-    console.log(`   日志文件: ${fs.existsSync(workspacePaths.logFile) ? '✅ 存在' : '❌ 不存在'}`);
-    console.log(`   状态文件: ${fs.existsSync(workspacePaths.stateFile) ? '✅ 存在' : '❌ 不存在'}`);
-    console.log(`   工作区目录: ${fs.existsSync(workspacePaths.ccbDir) ? '✅ 存在' : '❌ 不存在'}`);
-    console.log('');
-    
-    // Claude Code 安装检查
-    console.log('🔧 依赖检查:');
+    // Claude Code 状态
     const claudeInstalled = await checkClaudeInstallation();
-    if (claudeInstalled) {
-        const claudeVersion = await getClaudeVersion();
-        console.log(`   Claude Code: ✅ 已安装 ${claudeVersion ? `(${claudeVersion})` : ''}`);
-    } else {
-        console.log('   Claude Code: ❌ 未安装');
-        console.log('   安装命令: npm install -g @anthropic-ai/claude-code');
-    }
-    console.log('');
-
-    // Provider status check
-    console.log('🔍 Provider 模型状态检查:');
+    console.log(`Claude Code: ${claudeInstalled ? 'Installed' : 'Not installed'}`);
+    
+    // Provider 状态
     try {
         const providerStatuses = await checkProviders(config);
-        if (providerStatuses.length > 0) {
-            const table = providerStatuses.map(s => ({
-                'Provider ID': s.id,
-                '模型': s.model,
-                '可访问': s.accessible,
-                '函数调用': s.supports_function_calling,
-                'MCP': s.supports_mcp,
-                '错误': s.error || 'N/A'
-            }));
-            console.table(table);
-        } else {
-            console.log('   未配置Provider.');
-        }
+        const accessibleProviders = providerStatuses.filter(p => p.accessible === '✅').length;
+        console.log(`Providers: ${accessibleProviders}/${providerStatuses.length} accessible`);
     } catch (error: any) {
-        console.log(`   检查Provider时出错: ${error.message}`);
+        console.log(`Providers: Check failed - ${error.message}`);
     }
-    console.log('');
-    
-    // 日志文件大小（如果存在）
-    if (fs.existsSync(workspacePaths.logFile)) {
-        const logStats = fs.statSync(workspacePaths.logFile);
-        const logSize = (logStats.size / 1024).toFixed(2);
-        console.log(`📄 日志文件大小: ${logSize} KB`);
-        console.log('');
-    }
-    
-    // 操作建议
-    console.log('💡 可用命令:');
-    if (serviceState) {
-        console.log('   ccb code [args]  # 使用Claude Code开始编程');
-        console.log('   ccb stop         # 停止服务');
-        console.log('   ccb status       # 显示状态信息');
-    } else {
-        console.log('   ccb start        # 启动服务');
-        console.log('   ccb status       # 显示状态信息');
-    }
-    console.log('   ccb --help       # 显示帮助信息');
-    console.log('   ccb --version    # 显示版本信息');
-    console.log('');
 }
 
 /**
@@ -150,6 +66,7 @@ export function getStatusSummary(cwd: string): {
         logExists: fs.existsSync(workspacePaths.logFile)
     };
 }
+
 
 /**
  * 以JSON格式输出状态信息

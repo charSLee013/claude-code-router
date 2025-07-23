@@ -9,7 +9,7 @@ import { version } from "../package.json";
 const command = process.argv[2];
 
 const HELP_TEXT = `
-Usage: ccb [command]
+Usage: ccb [command] [options]
 
 Commands:
   start         Start service for current workspace
@@ -22,6 +22,7 @@ Commands:
 Example:
   ccb start
   ccb code "Write a Hello World"
+  ccb status
 `;
 
 async function waitForService(
@@ -94,7 +95,7 @@ async function main() {
       }
       break;
     case "status":
-      showStatus(cwd);
+      await showStatus(cwd);
       break;
     case "code":
       if (!isServiceRunning(cwd)) {
