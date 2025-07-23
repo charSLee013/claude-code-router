@@ -9,6 +9,8 @@ import {
   PLUGINS_DIR,
 } from "../constants";
 
+export * from "./conversationHistory";
+
 export function getOpenAICommonOptions(config?: { timeout?: number }): ClientOptions {
   const options: ClientOptions = {};
   

@@ -4,6 +4,7 @@ import { closeService } from "./utils/close";
 import { showStatus } from "./utils/status";
 import { executeCodeCommand } from "./utils/codeCommand";
 import { cleanupServiceState, isServiceRunning, getServiceState } from "./utils/processCheck";
+import { listConversationSessions, clearConversationHistory, getLatestActiveSession } from "./utils/conversationHistory";
 import { version } from "../package.json";
 
 const command = process.argv[2];
@@ -16,6 +17,9 @@ Commands:
   stop          Stop service for current workspace
   status        Show service status for current workspace
   code          Execute code command
+  continue      Continue a previous conversation
+  history       Show conversation history
+  clear-history Clear conversation history
   -v, version   Show version information
   -h, help      Show help information
 
@@ -23,6 +27,8 @@ Example:
   ccb start
   ccb code "Write a Hello World"
   ccb status
+  ccb continue
+  ccb history
 `;
 
 async function waitForService(
@@ -117,6 +123,56 @@ async function main() {
       } else {
         executeCodeCommand(cwd, process.argv.slice(3));
       }
+      break;
+    case "continue":
+      // Get the latest active session or create a new one
+      let session = getLatestActiveSession(cwd);
+      if (!session) {
+        console.log("No active conversation found. Starting a new conversation.");
+        // For continue command, we'll start a new conversation with a generic title
+        // The actual title will be set when the first message is sent
+        session = createConversationSession(cwd, "Continued conversation");
+      }
+      
+      // Set an environment variable to indicate we're continuing a conversation
+      process.env.CCB_CONTINUE_SESSION_ID = session.id;
+      
+      // Then execute the code command
+      if (!isServiceRunning(cwd)) {
+        console.log("Service not running for this workspace, starting service...");
+        // 更新 .gitignore
+        await updateGitignore(cwd);
+        spawn("ccb", ["start"], {
+          detached: true,
+          stdio: "ignore",
+        }).unref();
+        if (await waitForService(cwd)) {
+          executeCodeCommand(cwd, process.argv.slice(3));
+        } else {
+          console.error(
+            "Service startup timeout, please manually run ccb start to start the service"
+          );
+          process.exit(1);
+        }
+      } else {
+        executeCodeCommand(cwd, process.argv.slice(3));
+      }
+      break;
+    case "history":
+      const sessions = listConversationSessions(cwd);
+      if (sessions.length === 0) {
+        console.log("No conversation history found.");
+      } else {
+        console.log("Conversation History:");
+        sessions.forEach((session, index) => {
+          const activeMarker = session.isActive ? " (active)" : "";
+          const createdAt = new Date(session.createdAt).toLocaleString();
+          console.log(`${index + 1}. ${session.title}${activeMarker} - ${createdAt}`);
+        });
+      }
+      break;
+    case "clear-history":
+      clearConversationHistory(cwd);
       break;
     case "-v":
     case "version":

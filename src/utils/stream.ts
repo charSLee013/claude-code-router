@@ -3,6 +3,7 @@ import { OpenAI } from "openai";
 import { logWithConfig } from "./log";
 import { normalizeToArray, isArrayLike } from "./dataTransform";
 import { formatAnthropicResponse, aggregateStreamChunks } from "./responseFormat";
+import { addMessageToSession, createConversationSession } from "./conversationHistory";
 
 interface ContentBlock {
   type: string;
@@ -66,6 +67,9 @@ export async function streamOpenAIResponse(
   // 检查是否需要模拟非流式请求
   const simulateNonStream = req?._simulate_non_stream;
   
+  // Check if we're continuing a conversation and need to save the response
+  const sessionId = process.env.CCB_CONTINUE_SESSION_ID;
+  
   if (!body.stream) {
     // 使用标准化的响应格式化工具
     const formattedResponse = formatAnthropicResponse(
@@ -74,6 +78,34 @@ export async function streamOpenAIResponse(
       req?.cwd,
       req?.config
     );
+    
+    // Save conversation history if we're in a session
+    if (sessionId && req?.cwd) {
+      // Save user message
+      if (body.messages && body.messages.length > 0) {
+        const lastUserMessage = body.messages[body.messages.length - 1];
+        if (lastUserMessage.role === 'user') {
+          addMessageToSession(req.cwd, sessionId, {
+            role: 'user',
+            content: lastUserMessage.content,
+            timestamp: Date.now()
+          });
+        }
+      }
+      
+      // Save assistant response
+      if (formattedResponse.content && formattedResponse.content.length > 0) {
+        const assistantContent = formattedResponse.content.map(block => 
+          block.type === 'text' ? block.text : JSON.stringify(block)
+        ).join('\n');
+        
+        addMessageToSession(req.cwd, sessionId, {
+          role: 'assistant',
+          content: assistantContent,
+          timestamp: Date.now()
+        });
+      }
+    }
     
     res.json(formattedResponse);
     res.end();
@@ -134,6 +166,7 @@ export async function streamOpenAIResponse(
   let isToolUse = false;
   let toolUseJson = "";
   let hasStartedTextBlock = false;
+  let accumulatedText = "";
 
   try {
     for await (const chunk of completion) {
@@ -252,6 +285,9 @@ export async function streamOpenAIResponse(
         if (currentContentBlocks[contentBlockIndex]) {
           currentContentBlocks[contentBlockIndex].text += delta.content;
         }
+        
+        // Accumulate text for conversation history
+        accumulatedText += delta.content;
 
         write(
           `event: content_block_delta\ndata: ${JSON.stringify(
@@ -298,6 +334,9 @@ export async function streamOpenAIResponse(
     if (currentContentBlocks[contentBlockIndex]) {
       currentContentBlocks[contentBlockIndex].text += JSON.stringify(e);
     }
+    
+    // Accumulate text for conversation history
+    accumulatedText += JSON.stringify(e);
 
     write(
       `event: content_block_delta\ndata: ${JSON.stringify(contentDelta)}\n\n`
@@ -336,5 +375,30 @@ export async function streamOpenAIResponse(
   };
 
   write(`event: message_stop\ndata: ${JSON.stringify(messageStop)}\n\n`);
+  
+  // Save conversation history if we're in a session
+  if (sessionId && req?.cwd) {
+    // Save user message
+    if (body.messages && body.messages.length > 0) {
+      const lastUserMessage = body.messages[body.messages.length - 1];
+      if (lastUserMessage.role === 'user') {
+        addMessageToSession(req.cwd, sessionId, {
+          role: 'user',
+          content: lastUserMessage.content,
+          timestamp: Date.now()
+        });
+      }
+    }
+    
+    // Save assistant response
+    if (accumulatedText) {
+      addMessageToSession(req.cwd, sessionId, {
+        role: 'assistant',
+        content: accumulatedText,
+        timestamp: Date.now()
+      });
+    }
+  }
+  
   res.end();
 }

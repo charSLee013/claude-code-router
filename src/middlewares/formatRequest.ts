@@ -3,6 +3,7 @@ import { MessageCreateParamsBase } from "@anthropic-ai/sdk/resources/messages";
 import OpenAI from "openai";
 import { streamOpenAIResponse } from "../utils/stream";
 import { logWithConfig } from "../utils/log";
+import { loadConversationSession } from "../utils/conversationHistory";
 
 // 扩展 Express 的 Request 类型，添加 _simulate_non_stream 属性
 declare global {
@@ -38,6 +39,25 @@ export const formatRequest = async (
     stream,
   }: MessageCreateParamsBase & { max_new_tokens?: number } = req.body;
   log("formatRequest: ", req.body);
+  
+  // Check if we're continuing a conversation
+  const sessionId = process.env.CCB_CONTINUE_SESSION_ID;
+  if (sessionId && req.cwd) {
+    const session = loadConversationSession(req.cwd, sessionId);
+    if (session) {
+      // Add previous messages to the current request
+      // We need to convert our stored messages to the Anthropic format
+      const previousMessages = session.messages.map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }));
+      
+      // Prepend previous messages to the current messages
+      messages = [...previousMessages, ...messages];
+      
+      log(`Loaded ${session.messages.length} previous messages from conversation session ${sessionId}`);
+    }
+  }
   try {
     // @ts-ignore
     const openAIMessages = Array.isArray(messages)
