@@ -47,7 +47,7 @@ export const formatRequest = async (
     if (session) {
       // Add previous messages to the current request
       // We need to convert our stored messages to the Anthropic format
-      const previousMessages = session.messages.map(msg => ({
+      const previousMessages: any[] = session.messages.map(msg => ({
         role: msg.role,
         content: msg.content
       }));

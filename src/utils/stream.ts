@@ -94,16 +94,23 @@ export async function streamOpenAIResponse(
       }
       
       // Save assistant response
-      if (formattedResponse.content && formattedResponse.content.length > 0) {
-        const assistantContent = formattedResponse.content.map(block => 
-          block.type === 'text' ? block.text : JSON.stringify(block)
-        ).join('\n');
+      if (formattedResponse.content) {
+        let assistantContent = '';
+        if (typeof formattedResponse.content === 'string') {
+          assistantContent = formattedResponse.content;
+        } else if (Array.isArray(formattedResponse.content) && formattedResponse.content.length > 0) {
+          assistantContent = formattedResponse.content.map(block => 
+            typeof block === 'string' ? block : JSON.stringify(block)
+          ).join('\n');
+        }
         
-        addMessageToSession(req.cwd, sessionId, {
-          role: 'assistant',
-          content: assistantContent,
-          timestamp: Date.now()
-        });
+        if (assistantContent) {
+          addMessageToSession(req.cwd, sessionId, {
+            role: 'assistant',
+            content: assistantContent,
+            timestamp: Date.now()
+          });
+        }
       }
     }
     

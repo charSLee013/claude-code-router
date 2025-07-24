@@ -4,7 +4,7 @@ import { closeService } from "./utils/close";
 import { showStatus } from "./utils/status";
 import { executeCodeCommand } from "./utils/codeCommand";
 import { cleanupServiceState, isServiceRunning, getServiceState } from "./utils/processCheck";
-import { listConversationSessions, clearConversationHistory, getLatestActiveSession } from "./utils/conversationHistory";
+import { listConversationSessions, clearConversationHistory, getLatestActiveSession, createConversationSession } from "./utils/conversationHistory";
 import { version } from "../package.json";
 
 const command = process.argv[2];

@@ -29,6 +29,7 @@ export async function executeCodeCommand(cwd: string, args: string[] = []) {
     ANTHROPIC_AUTH_TOKEN: "test",
     ANTHROPIC_BASE_URL: `http://127.0.0.1:${serviceState.port}`,
     API_TIMEOUT_MS: config.timeout?.toString() || "600000",
+    CCB_CONTINUE_SESSION_ID: process.env.CCB_CONTINUE_SESSION_ID || "",
   };
 
   // 记录命令执行
