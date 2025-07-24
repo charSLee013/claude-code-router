@@ -37,6 +37,9 @@ export async function executeCodeCommand(cwd: string, args: string[] = []) {
   log(cwd, `服务端口: ${serviceState.port}`);
   log(cwd, `工作区: ${cwd}`);
 
+  // Log the args being passed to claude command for debugging
+  log(cwd, `Executing claude command with args: ${args.join(' ')}`);
+  
   // 执行claude命令
   const claudePath = process.env.CLAUDE_PATH || "claude";
   const claudeProcess = spawn(claudePath, args, {

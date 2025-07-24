@@ -104,6 +104,20 @@ async function main() {
       await showStatus(cwd);
       break;
     case "code":
+      // Check if there's an active conversation session and automatically continue it
+      const activeSession = getLatestActiveSession(cwd);
+      if (activeSession) {
+        process.env.CCB_CONTINUE_SESSION_ID = activeSession.id;
+      }
+      
+      // Automatically add --continue parameter to args if there's an active session
+      let args = process.argv.slice(3);
+      const continueIndex = args.indexOf("--continue");
+      if (continueIndex === -1 && activeSession) {
+        // Only add --continue if it's not already present and there's an active session
+        args = ["--continue", ...args];
+      }
+      
       if (!isServiceRunning(cwd)) {
         console.log("Service not running for this workspace, starting service...");
         // 更新 .gitignore
@@ -113,7 +127,7 @@ async function main() {
           stdio: "ignore",
         }).unref();
         if (await waitForService(cwd)) {
-          executeCodeCommand(cwd, process.argv.slice(3));
+          executeCodeCommand(cwd, args);
         } else {
           console.error(
             "Service startup timeout, please manually run ccb start to start the service"
@@ -121,7 +135,7 @@ async function main() {
           process.exit(1);
         }
       } else {
-        executeCodeCommand(cwd, process.argv.slice(3));
+        executeCodeCommand(cwd, args);
       }
       break;
     case "continue":
